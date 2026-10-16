@@ -1,4 +1,5 @@
 #include "Library.h"
+#include <juce_graphics/juce_graphics.h>
 
 namespace syn
 {
@@ -62,15 +63,25 @@ juce::String Library::toSfz() const
     return out;
 }
 
+namespace
+{
+constexpr int panelWidth = 812, panelHeight = 375;   // Decent Sampler's recommended panel size
+constexpr const char* backgroundPath = "Images/background.png";
+} // namespace
+
 juce::String Library::toDecentSampler() const
 {
     juce::XmlElement root ("DecentSampler");
     root.setAttribute ("minVersion", "1.0.0");
 
-    // A simple front panel: volume and release for the whole instrument.
+    // A front panel: volume and release for the whole instrument, the effects' knobs, and the
+    // background picture if there is one (writePresets copies it to Images/background.png).
     auto* ui = root.createNewChildElement ("ui");
-    ui->setAttribute ("width", 812);
-    ui->setAttribute ("height", 375);
+    ui->setAttribute ("width", panelWidth);
+    ui->setAttribute ("height", panelHeight);
+    ui->setAttribute ("bgColor", "FF22282E");
+    if (map.backgroundImage.isNotEmpty())
+        ui->setAttribute ("bgImage", backgroundPath);
     auto* tab = ui->createNewChildElement ("tab");
     tab->setAttribute ("name", "main");
     auto* title = tab->createNewChildElement ("label");
@@ -80,22 +91,29 @@ juce::String Library::toDecentSampler() const
     title->setAttribute ("height", 40);
     title->setAttribute ("text", map.libraryName);
     title->setAttribute ("textSize", 28);
-    auto knob = [tab] (int x, const juce::String& label, double min, double max, double value, const juce::String& parameter)
+    title->setAttribute ("textColor", "FFFFFFFF");
+    // Knobs sit in a row along the bottom, so a background picture shows above them.
+    int knobX = 20;
+    auto knob = [tab, &knobX] (const juce::String& label, double min, double max, double value,
+                               const juce::String& type, int effect, const juce::String& parameter)
     {
         auto* k = tab->createNewChildElement ("labeled-knob");
-        k->setAttribute ("x", x);
-        k->setAttribute ("y", 120);
+        k->setAttribute ("x", knobX);
+        k->setAttribute ("y", panelHeight - 110);
         k->setAttribute ("width", 90);
+        k->setAttribute ("height", 90);
         k->setAttribute ("label", label);
         k->setAttribute ("type", "float");
         k->setAttribute ("minValue", min);
         k->setAttribute ("maxValue", max);
         k->setAttribute ("value", value);
+        k->setAttribute ("textColor", "FFFFFFFF");
         auto* b = k->createNewChildElement ("binding");
-        b->setAttribute ("type", "amp");
+        b->setAttribute ("type", type);
         b->setAttribute ("level", "instrument");
-        b->setAttribute ("position", 0);
+        b->setAttribute ("position", effect);
         b->setAttribute ("parameter", parameter);
+        knobX += 110;
     };
     // The Release knob sets the whole instrument's release, starting at the first held group's.
     // A group with its own release (or a one-shot) keeps it, as a group's envelope wins.
@@ -106,8 +124,30 @@ juce::String Library::toDecentSampler() const
             release = g.releaseSeconds;
             break;
         }
-    knob (40, "Volume", 0.0, 1.0, 0.8, "AMP_VOLUME");
-    knob (150, "Release", 0.0, juce::jmax (5.0, release), release, "ENV_RELEASE");
+    knob ("Volume", 0.0, 1.0, 0.8, "amp", 0, "AMP_VOLUME");
+    knob ("Release", 0.0, juce::jmax (5.0, release), release, "amp", 0, "ENV_RELEASE");
+    if (map.effects)
+    {
+        // Effects on the whole instrument, all off (or open) to start. A knob finds its effect by
+        // its place in this list.
+        auto* effects = root.createNewChildElement ("effects");
+        auto effect = [effects] (const juce::String& type, std::initializer_list<std::pair<const char*, double>> values)
+        {
+            auto* e = effects->createNewChildElement ("effect");
+            e->setAttribute ("type", type);
+            for (const auto& [name, value] : values)
+                e->setAttribute (name, value);
+        };
+        effect ("lowpass", { { "frequency", 22000.0 }, { "resonance", 0.7 } });
+        effect ("chorus", { { "mix", 0.0 }, { "modDepth", 0.2 }, { "modRate", 0.2 } });
+        effect ("delay", { { "delayTime", 0.3 }, { "feedback", 0.3 }, { "stereoOffset", 0.01 }, { "wetLevel", 0.0 } });
+        effect ("reverb", { { "roomSize", 0.7 }, { "damping", 0.3 }, { "wetLevel", 0.0 } });
+        knob ("Tone", 60.0, 22000.0, 22000.0, "effect", 0, "FX_FILTER_FREQUENCY");
+        knob ("Chorus", 0.0, 1.0, 0.0, "effect", 1, "FX_MIX");
+        knob ("Delay", 0.0, 1.0, 0.0, "effect", 2, "FX_WET_LEVEL");
+        knob ("Reverb", 0.0, 1.0, 0.0, "effect", 3, "FX_REVERB_WET_LEVEL");
+        knob ("Room", 0.0, 1.0, 0.7, "effect", 3, "FX_REVERB_ROOM_SIZE");
+    }
 
     auto* groups = root.createNewChildElement ("groups");
     groups->setAttribute ("attack", 0.0);
@@ -157,6 +197,25 @@ juce::String Library::toDecentSampler() const
 juce::String Library::writePresets (const juce::File& folder, bool sfz, bool decentSampler) const
 {
     const auto name = LibraryRecorder::safeName (map.libraryName);
+    if (decentSampler && map.backgroundImage.isNotEmpty())
+    {
+        // Scaled and cropped to fill the panel, so any picture fits.
+        const auto picture = juce::ImageFileFormat::loadFrom (juce::File (map.backgroundImage));
+        if (! picture.isValid())
+            return "Could not read the background picture " + map.backgroundImage + ".";
+        juce::Image panel (juce::Image::RGB, panelWidth, panelHeight, true);
+        {
+            juce::Graphics g (panel);
+            g.drawImage (picture, panel.getBounds().toFloat(), juce::RectanglePlacement::fillDestination);
+        }
+        const auto file = folder.getChildFile (backgroundPath);
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::FileOutputStream out (file);
+        juce::PNGImageFormat png;
+        if (! out.openedOk() || ! png.writeImageToStream (panel, out))
+            return "Could not write " + juce::String (backgroundPath) + ".";
+    }
     if (sfz && ! folder.getChildFile (name + ".sfz").replaceWithText (toSfz()))
         return "Could not write " + name + ".sfz.";
     if (decentSampler && ! folder.getChildFile (name + ".dspreset").replaceWithText (toDecentSampler()))

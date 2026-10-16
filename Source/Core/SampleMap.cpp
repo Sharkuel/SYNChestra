@@ -144,6 +144,8 @@ juce::ValueTree SampleMap::toValueTree() const
 {
     juce::ValueTree t ("SampleMap");
     t.setProperty ("libraryName", libraryName, nullptr);
+    t.setProperty ("effects", effects, nullptr);
+    t.setProperty ("backgroundImage", backgroundImage, nullptr);
     for (const auto& g : groups)
         t.appendChild (g.toValueTree(), nullptr);
     return t;
@@ -153,6 +155,8 @@ SampleMap SampleMap::fromValueTree (const juce::ValueTree& t)
 {
     SampleMap m;
     m.libraryName = t.getProperty ("libraryName", m.libraryName);
+    m.effects = t.getProperty ("effects", m.effects);
+    m.backgroundImage = t.getProperty ("backgroundImage", m.backgroundImage);
     for (const auto& child : t)
         if (child.hasType ("Group"))
             m.groups.push_back (Group::fromValueTree (child));

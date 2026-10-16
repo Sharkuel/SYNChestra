@@ -51,6 +51,8 @@ struct SampleMap
 {
     juce::String libraryName = "My Library";
     std::vector<Group> groups;
+    bool effects = true;             // filter, chorus, delay and reverb knobs on the Decent Sampler panel
+    juce::String backgroundImage;    // full path of a picture for the Decent Sampler panel, or empty
 
     int totalRecordings() const;
 

@@ -1,6 +1,7 @@
 // Records a small library from a stand-in synth plugin and checks the samples and both presets,
 // so the recorder can be checked without a commercial plugin. Usage: SYNChestra_tests OUTPUT_FOLDER
 #include "../../Source/Core/Library.h"
+#include <juce_graphics/juce_graphics.h>
 
 namespace
 {
@@ -187,7 +188,20 @@ int main (int argc, char* argv[])
         check (false, "the first sample can be read");
     }
 
-    check (library.writePresets (folder, true, true).isEmpty(), "presets written");
+    // A small picture for the Decent Sampler panel, which writePresets scales to fill it.
+    const auto picture = folder.getSiblingFile ("picture.png");
+    {
+        juce::Image image (juce::Image::RGB, 100, 50, true);
+        image.clear (image.getBounds(), juce::Colours::orange);
+        picture.deleteFile();
+        juce::FileOutputStream out (picture);
+        juce::PNGImageFormat().writeImageToStream (image, out);
+    }
+    auto withPicture = library;
+    withPicture.map.backgroundImage = picture.getFullPathName();
+    check (withPicture.writePresets (folder, true, true).isEmpty(), "presets written");
+    const auto background = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/background.png"));
+    check (background.getWidth() == 812 && background.getHeight() == 375, "the background picture is scaled to the panel");
     const auto sfz = folder.getChildFile ("Test Synth.sfz").loadFileAsString();
     check (countOf (sfz, "<region>") == 13, "the .sfz has a region per sample");
     check (sfz.contains ("lokey=57 hikey=58 lovel=1 hivel=64 pitch_keycenter=57"), "the .sfz maps keys and velocities");
@@ -212,11 +226,28 @@ int main (int argc, char* argv[])
                        && folder.getChildFile (sample->getStringAttribute ("path")).existsAsFile(),
                    "Decent Sampler samples point at the recorded files");
             auto* drum = groups->getChildElement (1)->getChildElement (0);
+            check (ds->getChildByName ("ui")->getStringAttribute ("bgImage") == "Images/background.png",
+                   "the panel shows the background picture");
+            auto* effects = ds->getChildByName ("effects");
+            check (effects != nullptr && effects->getNumChildElements() == 4
+                       && effects->getChildElement (3)->getStringAttribute ("type") == "reverb",
+                   "the library has filter, chorus, delay and reverb");
+            bool reverbKnob = false;
+            for (auto* knob : ds->getChildByName ("ui")->getChildByName ("tab")->getChildWithTagNameIterator ("labeled-knob"))
+                if (auto* b = knob->getChildByName ("binding"))
+                    reverbKnob = reverbKnob || (b->getStringAttribute ("parameter") == "FX_REVERB_WET_LEVEL"
+                                                && b->getIntAttribute ("position") == 3);
+            check (reverbKnob, "the Reverb knob controls the reverb");
             check (drum->getIntAttribute ("pitchKeyTrack", 1) == 0 && drum->getIntAttribute ("loNote") == 40
                        && drum->getIntAttribute ("hiNote") == 40,
                    "the drum sits on its own key, unpitched");
         }
     }
+
+    auto plain = library;
+    plain.map.effects = false;
+    check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
+           "effects and background can be left out");
 
     // Find notes hears every key but the silent one, and stops when asked.
     const auto found = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, nullptr);
