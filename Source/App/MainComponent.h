@@ -31,6 +31,7 @@ private:
     void listenToGroup();
     void recordLibrary();
     void findNotes();
+    void offerFoundRows (const juce::Array<int>& found, int channel);
     void showKeyMenu (int note);
     void updateKeyboard();
     int selectedChannel() const;
@@ -83,6 +84,7 @@ private:
     juce::TableListBox table { {}, this };
     juce::MidiKeyboardState keyboardState;
     NoteKeyboard keyboard { keyboardState };
+    int newRowStart = -1;   // first key of a key row being drawn on the keyboard
     juce::Label status;
     juce::TooltipWindow tooltips { this };
 

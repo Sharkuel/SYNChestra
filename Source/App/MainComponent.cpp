@@ -148,7 +148,7 @@ MainComponent::MainComponent()
 
     keyboardState.addListener (this);
     keyboard.setTooltip ("Click to play the plugin on the selected row's channel. Right-click a key to set it as a "
-                         "row's lowest or highest note, or to add a drum on it. Amber: the selected row's keys. "
+                         "row's lowest or highest note, add a drum on it, or start and end a new key row. Amber: the selected row's keys. "
                          "Green: keys Find notes heard.");
     keyboard.onKeyMenu = [this] (int note) { showKeyMenu (note); };
 
@@ -612,7 +612,9 @@ int MainComponent::selectedChannel() const
 void MainComponent::updateKeyboard()
 {
     const int row = table.getSelectedRow();
-    if (juce::isPositiveAndBelow (row, (int) map.groups.size()))
+    if (newRowStart >= 0)
+        keyboard.showRow ({ newRowStart, newRowStart });
+    else if (juce::isPositiveAndBelow (row, (int) map.groups.size()))
     {
         const auto& g = map.groups[(size_t) row];
         keyboard.showRow ({ juce::jmin (g.lowNote, g.highNote), juce::jmax (g.lowNote, g.highNote) });
@@ -651,6 +653,16 @@ void MainComponent::showKeyMenu (int note)
     menu.addItem (1, "Set as lowest note of " + (haveRow ? rowName : "the selected row"), haveRow);
     menu.addItem (2, "Set as highest note of " + (haveRow ? rowName : "the selected row"), haveRow);
     menu.addItem (3, "Add a drum on " + name);
+    if (newRowStart < 0)
+    {
+        menu.addItem (5, "Start a new key row on " + name);
+    }
+    else
+    {
+        const int a = juce::jmin (newRowStart, note), b = juce::jmax (newRowStart, note);
+        menu.addItem (6, "End the new key row here (" + syn::noteName (a) + " to " + syn::noteName (b) + ")");
+        menu.addItem (7, "Cancel the new key row");
+    }
     // The run of sounding keys around this one, for a whole instrument in one click.
     int low = note, high = note;
     if (keyboard.sounding.count (note) > 0)
@@ -658,8 +670,11 @@ void MainComponent::showKeyMenu (int note)
         while (keyboard.sounding.count (low - 1) > 0) --low;
         while (keyboard.sounding.count (high + 1) > 0) ++high;
         if (high > low)
+        {
             menu.addItem (4, "Set " + (haveRow ? rowName : "the selected row") + " to the sounding keys "
                                  + syn::noteName (low) + " to " + syn::noteName (high), haveRow);
+            menu.addItem (8, "Add a key row for the sounding keys " + syn::noteName (low) + " to " + syn::noteName (high));
+        }
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
                         [safe = juce::Component::SafePointer<MainComponent> (this), row, note, low, high, name] (int choice)
@@ -667,6 +682,32 @@ void MainComponent::showKeyMenu (int note)
         if (safe == nullptr || choice == 0)
             return;
         auto& self = *safe;
+        if (choice == 5)
+        {
+            self.newRowStart = note;
+            self.keyboard.showRow ({ note, note });
+            return self.setStatus ("New key row starts on " + name + ". Right-click its last key to finish it.");
+        }
+        if (choice == 6 || choice == 8)
+        {
+            auto keys = syn::Group::keys();
+            keys.lowNote = choice == 8 ? low : juce::jmin (self.newRowStart, note);
+            keys.highNote = choice == 8 ? high : juce::jmax (self.newRowStart, note);
+            keys.name = "Keys " + syn::noteName (keys.lowNote) + "-" + syn::noteName (keys.highNote);
+            keys.midiChannel = self.selectedChannel();
+            self.newRowStart = -1;
+            self.map.groups.push_back (keys);
+            self.saveMap();
+            self.refreshTable();
+            self.table.selectRow ((int) self.map.groups.size() - 1);
+            return self.setStatus ("Added " + keys.name + ".");
+        }
+        if (choice == 7)
+        {
+            self.newRowStart = -1;
+            self.setStatus ("New key row cancelled.");
+            return self.updateKeyboard();
+        }
         if (choice == 3)
         {
             auto drum = syn::Group::drum (name, note);
@@ -730,6 +771,34 @@ void MainComponent::findNotes()
         }
         setStatus (juce::String (found->size()) + " keys make a sound on channel " + juce::String (channel) + ": "
                    + runs.joinIntoString (", ") + ". They're marked green on the keyboard; right-click one to use it.");
+        offerFoundRows (*found, channel);
+    });
+}
+
+void MainComponent::offerFoundRows (const juce::Array<int>& found, int channel)
+{
+    // A drum row selected (or channel 10) means a kit: one row per key. Otherwise runs become key rows.
+    const int row = table.getSelectedRow();
+    const bool drums = channel == 10
+                       || (juce::isPositiveAndBelow (row, (int) map.groups.size()) && ! map.groups[(size_t) row].pitched);
+    auto rows = std::make_shared<std::vector<syn::Group>> (syn::Group::fromSoundingNotes (found, drums, channel));
+    const auto what = drums ? juce::String (rows->size()) + " drum rows, one per key"
+                            : juce::String (rows->size()) + " rows: a key row for each run of keys and a drum row for lone keys";
+    auto options = juce::MessageBoxOptions::makeOptionsYesNoCancel (
+        juce::MessageBoxIconType::QuestionIcon, "Add rows for the keys found?",
+        "Find notes can fill the table with " + what + ".", "Replace the rows", "Add to the rows", "No thanks", this);
+    juce::AlertWindow::showAsync (options, [safe = juce::Component::SafePointer<MainComponent> (this), rows] (int choice)
+    {
+        // 1: replace, 2: add, 0: no.
+        if (safe == nullptr || choice == 0)
+            return;
+        if (choice == 1)
+            safe->map.groups.clear();
+        for (auto& g : *rows)
+            safe->map.groups.push_back (g);
+        safe->saveMap();
+        safe->refreshTable();
+        safe->table.selectRow ((int) safe->map.groups.size() - (int) rows->size());
     });
 }
 
