@@ -31,7 +31,17 @@ The name is a tribute to Devin Townsend's *Synchestra*.
 
    **Add keys** adds a keyboard range (a recording every 3 keys from C2 to C7 by default).
    **Add drum** adds a single unpitched one-shot note. **Listen** plays the selected row's middle
-   note, held as it will be recorded.
+   note, held as it will be recorded. **Measure** holds the row's lowest note (it rings longest)
+   for up to 20 seconds, then taps it, and sets the row to suit what it heard:
+
+   - a note that keeps ringing after key-up (a drum, a pluck, a bell) becomes a one-shot, so each
+     recording keeps its whole ring;
+   - a note that dies away while held (a piano, a guitar) gets a Hold long enough to die away;
+   - a note that sustains (a pad, an organ, strings) gets a 4 s Hold. Raise it if you'll hold
+     notes longer, since a sampler can't play past the end of a recording.
+
+   Release is set to how long the note takes to fade after key-up. Recordings always keep the
+   whole tail after the hold, whatever these are set to.
 
    The keyboard at the bottom plays the plugin on the selected row's channel, and shades that
    row's keys. **Find notes** plays every key once on that channel and marks the ones that make

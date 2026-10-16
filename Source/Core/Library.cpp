@@ -223,6 +223,61 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
     return {};
 }
 
+namespace
+{
+/** Seconds from the start until the sound last reaches 60 dB below its peak, in 10 ms steps. */
+double secondsToFade (const juce::AudioBuffer<float>& audio, double sampleRate)
+{
+    const int step = juce::jmax (1, (int) (sampleRate * 0.01));
+    float peak = 0.0f;
+    for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+        peak = juce::jmax (peak, audio.getMagnitude (ch, 0, audio.getNumSamples()));
+    const float quiet = peak * juce::Decibels::decibelsToGain (-60.0f);
+    int last = 0;
+    for (int at = 0; at < audio.getNumSamples(); at += step)
+    {
+        const int n = juce::jmin (step, audio.getNumSamples() - at);
+        for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+            if (audio.getMagnitude (ch, at, n) >= quiet)
+                last = at + n;
+    }
+    return last / sampleRate;
+}
+} // namespace
+
+LibraryRecorder::Timing LibraryRecorder::measureTiming (juce::AudioPluginInstance& plugin, NoteRenderer::Settings settings,
+                                                        const Group& group)
+{
+    // The lowest note rings longest, so what suits it suits the rest of the row.
+    constexpr double longHold = 20.0, shortHold = 0.1;
+    settings.maxSeconds = 30.0;
+    NoteRenderer renderer (plugin, settings);
+    const int note = group.sampledNotes().isEmpty() ? group.lowNote : group.sampledNotes().getFirst();
+    Timing t;
+
+    const auto held = renderer.render (note, 127, longHold, group.midiChannel);
+    if (held.getNumSamples() == 0)
+        return t;
+    t.sounds = true;
+    t.ringSeconds = secondsToFade (held, settings.sampleRate);
+    t.sustains = t.ringSeconds >= longHold - 0.5;
+
+    // Let go almost at once: how long it lasts after the key comes up, and whether it cares.
+    const auto tapped = renderer.render (note, 127, shortHold, group.midiChannel);
+    const double tappedSeconds = secondsToFade (tapped, settings.sampleRate);
+    t.release = juce::jlimit (0.05, 10.0, tappedSeconds - shortHold);
+    t.oneShot = ! t.sustains && tappedSeconds >= 0.8 * t.ringSeconds;
+
+    if (t.oneShot)
+        t.hold = shortHold;   // the recording rings to its end whatever the hold
+    else if (t.sustains)
+        t.hold = 4.0;         // long enough for held chords; a key held longer runs out of sample
+    else
+        t.hold = std::ceil (t.ringSeconds * 10.0) / 10.0;   // hold until it has died away by itself
+    t.release = std::round (t.release * 100.0) / 100.0;
+    return t;
+}
+
 juce::Array<int> LibraryRecorder::findSoundingNotes (juce::AudioPluginInstance& plugin, NoteRenderer::Settings settings,
                                                      int midiChannel, std::function<bool (int)> onProgress)
 {
