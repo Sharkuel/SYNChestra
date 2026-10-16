@@ -1,0 +1,79 @@
+#pragma once
+#include <juce_audio_utils/juce_audio_utils.h>
+#include "../Core/SampleMap.h"
+#include "LiveHost.h"
+
+/** Find instrument plugins, load one, describe what to record, and record it into a
+    Decent Sampler and SFZ library. */
+class MainComponent : public juce::Component,
+                      private juce::TableListBoxModel,
+                      private juce::ChangeListener
+{
+public:
+    MainComponent();
+    ~MainComponent() override;
+
+    void resized() override;
+
+private:
+    enum Column { colOn = 1, colName, colLow, colHigh, colStep, colLayers, colRoundRobins, colHold, colRelease,
+                  colPitched, colOneShot, colChannel, colCount };
+
+    void scanPlugins();
+    void refreshPluginChoices();
+    static juce::String pluginLabel (const juce::PluginDescription&);
+    void loadSelectedPlugin();
+    void showPluginWindow();
+    void addGroup (syn::Group);
+    void removeGroup();
+    void listenToGroup();
+    void recordLibrary();
+    void saveMap();
+    void refreshTable();
+    juce::File outputFolder() const;
+    void chooseOutputFolder();
+    void showOutputFolder();
+    double sampleRate() const;
+    void setLive (bool on);
+    void enableMidiInputs();
+    bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
+                 std::function<void (const juce::String&)> done);
+    void setStatus (const juce::String& text);
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    juce::File scanCrashFile() const;
+
+    juce::String cellText (const syn::Group&, int column) const;
+    void setCell (int row, int column, const juce::String& text);
+
+    // TableListBoxModel
+    int getNumRows() override;
+    void paintRowBackground (juce::Graphics&, int row, int w, int h, bool selected) override;
+    void paintCell (juce::Graphics&, int row, int column, int w, int h, bool selected) override;
+    juce::Component* refreshComponentForCell (int row, int column, bool selected, juce::Component* existing) override;
+
+    juce::AudioPluginFormatManager formats;
+    juce::KnownPluginList knownPlugins;
+    juce::PropertiesFile::Options settingsOptions;
+    std::unique_ptr<juce::PropertiesFile> settings;
+    std::unique_ptr<juce::AudioPluginInstance> plugin;
+    std::unique_ptr<juce::DocumentWindow> pluginWindow;
+    syn::SampleMap map;
+
+    juce::AudioDeviceManager audioDevices;
+    LiveHost live;   // the plugin on the sound card, played from MIDI inputs and its own window
+    std::unique_ptr<juce::ThreadWithProgressWindow> job;
+    std::unique_ptr<juce::FileChooser> chooser;
+
+    juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" }, showButton { "Show plugin" },
+        addKeysButton { "Add keys" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
+        listenButton { "Listen" }, recordButton { "Record library" }, saveToButton { "Change..." };
+    juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" };
+    juce::ComboBox pluginChoice, rateChoice;
+    juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;
+    juce::TextEditor libraryName, pluginSearch;
+    juce::TableListBox table { {}, this };
+    juce::Label status;
+    juce::TooltipWindow tooltips { this };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
+};

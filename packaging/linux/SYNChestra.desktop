@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SYNChestra
+Comment=Record instrument plugins into Decent Sampler and SFZ libraries
+Exec=SYNChestra
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupWMClass=SYNChestra
