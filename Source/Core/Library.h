@@ -54,6 +54,18 @@ public:
     static juce::Array<int> findSoundingNotes (juce::AudioPluginInstance&, NoteRenderer::Settings, int midiChannel,
                                                std::function<bool (int note)> onProgress);
 
+    /** How a row's notes ring, measured on its lowest note at full velocity, and the Hold,
+        Release and One-shot settings that follow from it. */
+    struct Timing
+    {
+        bool sounds = false;        // false: the note plays nothing, and nothing below is set
+        bool sustains = false;      // still sounding after being held for the whole test
+        bool oneShot = false;       // lets go of the key and rings on as if still held
+        double ringSeconds = 0.0;   // held, how long until it fades 60 dB below its peak
+        double hold = 2.0, release = 0.3;
+    };
+    static Timing measureTiming (juce::AudioPluginInstance&, NoteRenderer::Settings, const Group&);
+
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 

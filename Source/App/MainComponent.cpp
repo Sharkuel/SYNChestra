@@ -118,6 +118,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
+                                (juce::Component*) &measureButton,
                                 (juce::Component*) &findButton, (juce::Component*) &keyboard,
                                 (juce::Component*) &status })
         addAndMakeVisible (c);
@@ -190,6 +191,9 @@ MainComponent::MainComponent()
     showOutputFolder();
     listenButton.onClick = [this] { listenToGroup(); };
     listenButton.setTooltip ("Plays the selected row's middle note, held as it will be recorded.");
+    measureButton.onClick = [this] { measureGroup(); };
+    measureButton.setTooltip ("Plays the selected row's lowest note to hear how long it rings, then sets Hold, "
+                              "Release and One-shot to suit it.");
     recordButton.onClick = [this] { recordLibrary(); };
     recordButton.setTooltip ("Records every ticked row into Samples, then writes the library's presets.");
     status.setJustificationType (juce::Justification::topLeft);
@@ -266,6 +270,8 @@ void MainComponent::resized()
     recordButton.setBounds (row.removeFromRight (140));
     row.removeFromRight (gap);
     listenButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (gap);
+    measureButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap * 2);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (90));
@@ -514,6 +520,53 @@ void MainComponent::listenToGroup()
     setStatus ("Playing " + group.name + " " + syn::noteName (note) + " at velocity 100.");
 }
 
+void MainComponent::measureGroup()
+{
+    const int row = table.getSelectedRow();
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+    if (! juce::isPositiveAndBelow (row, (int) map.groups.size()))
+        return setStatus ("Select a row to measure.");
+    syn::NoteRenderer::Settings render;
+    render.sampleRate = sampleRate();
+    render.blockSize = blockSize;
+    const auto group = map.groups[(size_t) row];
+    auto* instrument = plugin.get();
+    auto timing = std::make_shared<syn::LibraryRecorder::Timing>();
+
+    runJob ("Measuring " + group.name, [instrument, render, group, timing] (juce::ThreadWithProgressWindow& window)
+    {
+        window.setStatusMessage ("Holding " + syn::noteName (group.sampledNotes().getFirst()) + " to hear how long it rings");
+        *timing = syn::LibraryRecorder::measureTiming (*instrument, render, group);
+        return juce::String();
+    },
+    [this, row, timing] (const juce::String&)
+    {
+        if (! juce::isPositiveAndBelow (row, (int) map.groups.size()))
+            return;
+        auto& g = map.groups[(size_t) row];
+        const auto& t = *timing;
+        if (! t.sounds)
+            return setStatus (g.name + "'s lowest note plays nothing on channel " + juce::String (g.midiChannel) + ".");
+        g.holdSeconds = t.hold;
+        g.oneShot = t.oneShot;
+        if (! t.oneShot)
+            g.releaseSeconds = t.release;
+        saveMap();
+        refreshTable();
+        const auto seconds = [] (double s) { return juce::String (s, s < 1.0 ? 2 : 1) + " s"; };
+        if (t.oneShot)
+            setStatus (g.name + " rings for " + seconds (t.ringSeconds) + " and keeps ringing after key-up, so it's now "
+                       "a one-shot with Hold " + seconds (t.hold) + ". Each recording keeps its whole ring.");
+        else if (t.sustains)
+            setStatus (g.name + " sustains while held and fades in " + seconds (t.release) + " after key-up: Hold "
+                       + seconds (t.hold) + ", Release " + seconds (t.release) + ". Raise Hold for longer held notes.");
+        else
+            setStatus (g.name + " dies away in " + seconds (t.ringSeconds) + " while held and fades in " + seconds (t.release)
+                       + " after key-up: Hold " + seconds (t.hold) + ", Release " + seconds (t.release) + ".");
+    });
+}
+
 // --- recording -------------------------------------------------------------------------------
 
 juce::File MainComponent::outputFolder() const
@@ -596,14 +649,14 @@ bool MainComponent::runJob (const juce::String& title,
     if (job != nullptr)
         return false;
     setLive (false);
-    for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton })
+    for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton, &measureButton })
         b->setEnabled (false);
     job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
     {
         if (plugin != nullptr)
             plugin->prepareToPlay (sampleRate(), blockSize);
         setLive (true);
-        for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton })
+        for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton, &measureButton })
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.

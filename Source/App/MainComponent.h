@@ -29,6 +29,7 @@ private:
     void addGroup (syn::Group);
     void removeGroup();
     void listenToGroup();
+    void measureGroup();
     void recordLibrary();
     void findNotes();
     void offerFoundRows (const juce::Array<int>& found, int channel);
@@ -78,7 +79,7 @@ private:
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" }, showButton { "Show plugin" },
         addKeysButton { "Add keys" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
-        listenButton { "Listen" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
+        listenButton { "Listen" }, measureButton { "Measure" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, effectKnobs { "Effect knobs" };
     juce::TextButton backgroundButton { "Background..." };
     juce::ComboBox pluginChoice, rateChoice;

@@ -6,7 +6,8 @@
 namespace
 {
 /** Each note plays a sine at its pitch, louder with velocity, while held, then fades over
-    0.2 s. The left side is louder than the right, so the test can tell stereo was kept. */
+    0.2 s. The left side is louder than the right, so the test can tell stereo was kept.
+    Notes from 100 up are plucks: they die away over about 3.5 s and ignore note-off. */
 class FakeSynth final : public juce::AudioPluginInstance
 {
 public:
@@ -38,7 +39,9 @@ public:
         {
             for (; pos < end; ++pos)
             {
-                if (! held)
+                if (pluck)
+                    level *= std::exp (-1.0 / (0.5 * rate));
+                else if (! held)
                     level *= std::exp (-1.0 / (0.03 * rate));
                 if (level < 1.0e-6)
                     continue;
@@ -57,6 +60,7 @@ public:
                 level = msg.getFloatVelocity() * 0.5;
                 frequency = juce::MidiMessage::getMidiNoteInHertz (msg.getNoteNumber());
                 held = true;
+                pluck = msg.getNoteNumber() >= 100;
                 channels.insert (msg.getChannel());
             }
             if (msg.isNoteOff() || msg.isAllNotesOff())
@@ -69,7 +73,7 @@ public:
 
 private:
     double rate = 48000.0, level = 0.0, phase = 0.0, frequency = 440.0;
-    bool held = false;
+    bool held = false, pluck = false;
 };
 
 int failures = 0;
@@ -248,6 +252,22 @@ int main (int argc, char* argv[])
     plain.map.effects = false;
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
+
+    // Measuring: the held sine sustains and fades in about 0.2 s after key-up; the pluck dies
+    // away by itself in about 3.5 s whatever the key does.
+    syn::Group sine;
+    sine.lowNote = sine.highNote = 60;
+    const auto sustained = syn::LibraryRecorder::measureTiming (synth, {}, sine);
+    check (sustained.sounds && sustained.sustains && ! sustained.oneShot && sustained.release > 0.1 && sustained.release < 0.4,
+           "a sustained note keeps its hold and gets its release (" + juce::String (sustained.release) + " s)");
+    syn::Group pluck;
+    pluck.lowNote = pluck.highNote = 100;
+    const auto plucked = syn::LibraryRecorder::measureTiming (synth, {}, pluck);
+    check (plucked.sounds && ! plucked.sustains && plucked.oneShot && plucked.ringSeconds > 3.0 && plucked.ringSeconds < 4.0,
+           "a note that ignores key-up is a one-shot (" + juce::String (plucked.ringSeconds, 2) + " s)");
+    syn::Group silent;
+    silent.lowNote = silent.highNote = 61;
+    check (! syn::LibraryRecorder::measureTiming (synth, {}, silent).sounds, "a silent note measures nothing");
 
     // Find notes hears every key but the silent one, and stops when asked.
     const auto found = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, nullptr);
