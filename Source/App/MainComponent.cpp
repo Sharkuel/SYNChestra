@@ -114,6 +114,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &addDrumButton, (juce::Component*) &removeButton,
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz,
+                                (juce::Component*) &effectKnobs, (juce::Component*) &backgroundButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
@@ -198,6 +199,16 @@ MainComponent::MainComponent()
     else
         map.groups.push_back (syn::Group::keys());
     libraryName.setText (map.libraryName, juce::dontSendNotification);
+    effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
+    effectKnobs.onClick = [this]
+    {
+        map.effects = effectKnobs.getToggleState();
+        saveMap();
+    };
+    effectKnobs.setTooltip ("Adds Tone, Chorus, Delay, Reverb and Room knobs to the Decent Sampler panel. "
+                            "They start off, so the library sounds as recorded.");
+    backgroundButton.onClick = [this] { chooseBackground(); };
+    showBackground();
     refreshTable();
 
     refreshPluginChoices();
@@ -264,6 +275,9 @@ void MainComponent::resized()
     row = area.removeFromBottom (rowHeight);
     decentSampler.setBounds (row.removeFromLeft (210));
     sfz.setBounds (row.removeFromLeft (110));
+    effectKnobs.setBounds (row.removeFromLeft (120));
+    backgroundButton.setBounds (row.removeFromLeft (170));
+    row.removeFromLeft (gap * 2);
     rateChoice.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (gap * 2);
     totalLabel.setBounds (row);
@@ -524,6 +538,51 @@ void MainComponent::chooseOutputFolder()
     });
 }
 
+void MainComponent::chooseBackground()
+{
+    auto pick = [this]
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Pick a background picture for the Decent Sampler panel",
+                                                       juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
+                                                       "*.png;*.jpg;*.jpeg");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this] (const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (file == juce::File())
+                return;
+            if (! juce::ImageFileFormat::loadFrom (file).isValid())
+                return setStatus ("Can't read " + file.getFileName() + " as a picture.");
+            map.backgroundImage = file.getFullPathName();
+            saveMap();
+            showBackground();
+            setStatus ("The Decent Sampler panel will show " + file.getFileName()
+                       + ", scaled to fill its 812 x 375 pixels.");
+        });
+    };
+    if (map.backgroundImage.isEmpty())
+        return pick();
+    juce::PopupMenu menu;
+    menu.addItem ("Choose another picture...", pick);
+    menu.addItem ("No picture", [this]
+    {
+        map.backgroundImage = {};
+        saveMap();
+        showBackground();
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (backgroundButton));
+}
+
+void MainComponent::showBackground()
+{
+    const juce::File file (map.backgroundImage);
+    backgroundButton.setButtonText (map.backgroundImage.isEmpty() ? "Background..." : "Background: " + file.getFileName());
+    backgroundButton.setTooltip (map.backgroundImage.isEmpty()
+                                     ? "Pick a picture for the Decent Sampler panel. Best at 812 x 375 pixels; "
+                                       "others are scaled and cropped to fit."
+                                     : file.getFullPathName());
+}
+
 void MainComponent::showOutputFolder()
 {
     saveToPath.setText (outputFolder().getFullPathName(), juce::dontSendNotification);
@@ -566,6 +625,8 @@ void MainComponent::recordLibrary()
         return setStatus ("Tick Record on at least one row.");
     if (! decentSampler.getToggleState() && ! sfz.getToggleState())
         return setStatus ("Tick Decent Sampler, SFZ or both, so the library has a preset to open.");
+    if (decentSampler.getToggleState() && map.backgroundImage.isNotEmpty() && ! juce::File (map.backgroundImage).existsAsFile())
+        return setStatus ("The background picture " + map.backgroundImage + " is gone. Pick another, or No picture.");
 
     const auto folder = outputFolder().getChildFile (syn::LibraryRecorder::safeName (map.libraryName));
     const auto toRecord = map;

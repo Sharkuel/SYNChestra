@@ -46,6 +46,12 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    its last key and choose **End the new key row here**.
 4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
 
+   The Decent Sampler panel has Volume and Release knobs. With **Effect knobs** ticked it also
+   gets Tone (a low-pass filter), Chorus, Delay, Reverb and Room knobs, all off to start so the
+   library sounds as recorded. **Background...** picks a picture for the panel; it's copied to
+   `Images/background.png`, scaled and cropped to the panel's 812 x 375 pixels. SFZ has no
+   standard panel, so these only apply to the .dspreset.
+
 The library is saved in the **Save to** folder (Documents/SYNChestra by default):
 
 ```
