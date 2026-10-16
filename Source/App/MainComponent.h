@@ -2,12 +2,14 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/SampleMap.h"
 #include "LiveHost.h"
+#include "NoteKeyboard.h"
 
 /** Find instrument plugins, load one, describe what to record, and record it into a
     Decent Sampler and SFZ library. */
 class MainComponent : public juce::Component,
                       private juce::TableListBoxModel,
-                      private juce::ChangeListener
+                      private juce::ChangeListener,
+                      private juce::MidiKeyboardState::Listener
 {
 public:
     MainComponent();
@@ -28,6 +30,13 @@ private:
     void removeGroup();
     void listenToGroup();
     void recordLibrary();
+    void findNotes();
+    void showKeyMenu (int note);
+    void updateKeyboard();
+    int selectedChannel() const;
+    void selectedRowsChanged (int lastRowSelected) override;
+    void handleNoteOn (juce::MidiKeyboardState*, int channel, int note, float velocity) override;
+    void handleNoteOff (juce::MidiKeyboardState*, int channel, int note, float velocity) override;
     void saveMap();
     void refreshTable();
     juce::File outputFolder() const;
@@ -66,12 +75,14 @@ private:
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" }, showButton { "Show plugin" },
         addKeysButton { "Add keys" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
-        listenButton { "Listen" }, recordButton { "Record library" }, saveToButton { "Change..." };
+        listenButton { "Listen" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" };
     juce::ComboBox pluginChoice, rateChoice;
     juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;
     juce::TextEditor libraryName, pluginSearch;
     juce::TableListBox table { {}, this };
+    juce::MidiKeyboardState keyboardState;
+    NoteKeyboard keyboard { keyboardState };
     juce::Label status;
     juce::TooltipWindow tooltips { this };
 

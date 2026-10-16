@@ -117,6 +117,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
+                                (juce::Component*) &findButton, (juce::Component*) &keyboard,
                                 (juce::Component*) &status })
         addAndMakeVisible (c);
 
@@ -141,6 +142,15 @@ MainComponent::MainComponent()
     addDrumButton.onClick = [this] { addGroup (syn::Group::drum ("Drum", 38)); };
     addDrumButton.setTooltip ("Adds a single unpitched note that plays to its end: a drum, a hit or an effect.");
     removeButton.onClick = [this] { removeGroup(); };
+    findButton.onClick = [this] { findNotes(); };
+    findButton.setTooltip ("Plays every key once on the selected row's MIDI channel and marks the ones that make a "
+                           "sound on the keyboard below.");
+
+    keyboardState.addListener (this);
+    keyboard.setTooltip ("Click to play the plugin on the selected row's channel. Right-click a key to set it as a "
+                         "row's lowest or highest note, or to add a drum on it. Amber: the selected row's keys. "
+                         "Green: keys Find notes heard.");
+    keyboard.onKeyMenu = [this] (int note) { showKeyMenu (note); };
 
     auto& header = table.getHeader();
     header.addColumn ("Record", colOn, 56);
@@ -193,13 +203,14 @@ MainComponent::MainComponent()
     refreshPluginChoices();
     setStatus (knownPlugins.getNumTypes() == 0 ? "Find your instrument plugins to start."
                                                : "Pick a plugin and load it.");
-    setSize (1100, 640);
+    setSize (1100, 740);
 }
 
 MainComponent::~MainComponent()
 {
     setLive (false);
     knownPlugins.removeChangeListener (this);
+    keyboardState.removeListener (this);
     audioDevices.removeMidiInputDeviceCallback ({}, &live);
     audioDevices.removeAudioCallback (&live);
     pluginWindow = nullptr;
@@ -229,12 +240,16 @@ void MainComponent::resized()
     row.removeFromLeft (gap);
     removeButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap);
+    findButton.setBounds (row.removeFromRight (100));
+    row.removeFromRight (gap * 3);
     addDrumButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap);
     addKeysButton.setBounds (row.removeFromRight (90));
     area.removeFromTop (gap);
 
     status.setBounds (area.removeFromBottom (44));
+    area.removeFromBottom (gap);
+    keyboard.setBounds (area.removeFromBottom (80));
     area.removeFromBottom (gap);
     row = area.removeFromBottom (rowHeight);
     recordButton.setBounds (row.removeFromRight (140));
@@ -437,6 +452,7 @@ void MainComponent::refreshTable()
     table.repaint();
     const int total = map.totalRecordings();
     totalLabel.setText (juce::String (total) + (total == 1 ? " recording" : " recordings"), juce::dontSendNotification);
+    updateKeyboard();
 }
 
 void MainComponent::addGroup (syn::Group group)
@@ -521,14 +537,14 @@ bool MainComponent::runJob (const juce::String& title,
     if (job != nullptr)
         return false;
     setLive (false);
-    for (auto* b : { &recordButton, &listenButton, &loadButton })
+    for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton })
         b->setEnabled (false);
     job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
     {
         if (plugin != nullptr)
             plugin->prepareToPlay (sampleRate(), blockSize);
         setLive (true);
-        for (auto* b : { &recordButton, &listenButton, &loadButton })
+        for (auto* b : { &recordButton, &listenButton, &loadButton, &findButton })
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.
@@ -581,6 +597,139 @@ void MainComponent::recordLibrary()
         setStatus (report);
         if (folder.isDirectory())
             folder.revealToUser();
+    });
+}
+
+// --- keyboard ------------------------------------------------------------------------------
+
+int MainComponent::selectedChannel() const
+{
+    const int row = table.getSelectedRow();
+    return juce::isPositiveAndBelow (row, (int) map.groups.size()) ? juce::jlimit (1, 16, map.groups[(size_t) row].midiChannel)
+                                                                 : 1;
+}
+
+void MainComponent::updateKeyboard()
+{
+    const int row = table.getSelectedRow();
+    if (juce::isPositiveAndBelow (row, (int) map.groups.size()))
+    {
+        const auto& g = map.groups[(size_t) row];
+        keyboard.showRow ({ juce::jmin (g.lowNote, g.highNote), juce::jmax (g.lowNote, g.highNote) });
+    }
+    else
+    {
+        keyboard.showRow ({ -1, -1 });
+    }
+}
+
+void MainComponent::selectedRowsChanged (int)
+{
+    updateKeyboard();
+}
+
+void MainComponent::handleNoteOn (juce::MidiKeyboardState*, int, int note, float velocity)
+{
+    // The keyboard's own channel is ignored: it plays on the selected row's, as recording will.
+    live.play (juce::MidiMessage::noteOn (selectedChannel(), note, velocity));
+}
+
+void MainComponent::handleNoteOff (juce::MidiKeyboardState*, int, int note, float)
+{
+    live.play (juce::MidiMessage::noteOff (selectedChannel(), note));
+}
+
+void MainComponent::showKeyMenu (int note)
+{
+    const int row = table.getSelectedRow();
+    const bool haveRow = juce::isPositiveAndBelow (row, (int) map.groups.size());
+    const auto rowName = haveRow ? map.groups[(size_t) row].name : juce::String();
+    const auto name = syn::noteName (note);
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader (name + " (" + juce::String (note) + ")");
+    menu.addItem (1, "Set as lowest note of " + (haveRow ? rowName : "the selected row"), haveRow);
+    menu.addItem (2, "Set as highest note of " + (haveRow ? rowName : "the selected row"), haveRow);
+    menu.addItem (3, "Add a drum on " + name);
+    // The run of sounding keys around this one, for a whole instrument in one click.
+    int low = note, high = note;
+    if (keyboard.sounding.count (note) > 0)
+    {
+        while (keyboard.sounding.count (low - 1) > 0) --low;
+        while (keyboard.sounding.count (high + 1) > 0) ++high;
+        if (high > low)
+            menu.addItem (4, "Set " + (haveRow ? rowName : "the selected row") + " to the sounding keys "
+                                 + syn::noteName (low) + " to " + syn::noteName (high), haveRow);
+    }
+    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
+                        [safe = juce::Component::SafePointer<MainComponent> (this), row, note, low, high, name] (int choice)
+    {
+        if (safe == nullptr || choice == 0)
+            return;
+        auto& self = *safe;
+        if (choice == 3)
+        {
+            auto drum = syn::Group::drum (name, note);
+            drum.midiChannel = self.selectedChannel();
+            self.map.groups.push_back (drum);
+            self.saveMap();
+            self.refreshTable();
+            self.table.selectRow ((int) self.map.groups.size() - 1);
+            return;
+        }
+        if (! juce::isPositiveAndBelow (row, (int) self.map.groups.size()))
+            return;
+        auto& g = self.map.groups[(size_t) row];
+        if (choice == 1) g.lowNote = note;
+        if (choice == 2) g.highNote = note;
+        if (choice == 4)
+        {
+            g.lowNote = low;
+            g.highNote = high;
+        }
+        self.saveMap();
+        self.refreshTable();
+    });
+}
+
+void MainComponent::findNotes()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+    syn::NoteRenderer::Settings render;
+    render.sampleRate = sampleRate();
+    render.blockSize = blockSize;
+    const int channel = selectedChannel();
+    auto* instrument = plugin.get();
+    auto found = std::make_shared<juce::Array<int>>();
+
+    runJob ("Finding notes", [instrument, render, channel, found] (juce::ThreadWithProgressWindow& window)
+    {
+        *found = syn::LibraryRecorder::findSoundingNotes (*instrument, render, channel, [&window] (int note)
+        {
+            window.setProgress (note / 128.0);
+            window.setStatusMessage ("Trying " + syn::noteName (note));
+            return ! window.threadShouldExit();
+        });
+        return juce::String();
+    },
+    [this, found, channel] (const juce::String&)
+    {
+        keyboard.showFound (std::set<int> (found->begin(), found->end()));
+        if (found->isEmpty())
+            return setStatus ("No key made a sound on channel " + juce::String (channel) + ".");
+        // Describe the sounding keys as runs: "C1-C6, F7".
+        juce::StringArray runs;
+        for (int i = 0; i < found->size();)
+        {
+            int j = i;
+            while (j + 1 < found->size() && (*found)[j + 1] == (*found)[j] + 1)
+                ++j;
+            runs.add (syn::noteName ((*found)[i]) + (j > i ? "-" + syn::noteName ((*found)[j]) : juce::String()));
+            i = j + 1;
+        }
+        setStatus (juce::String (found->size()) + " keys make a sound on channel " + juce::String (channel) + ": "
+                   + runs.joinIntoString (", ") + ". They're marked green on the keyboard; right-click one to use it.");
     });
 }
 

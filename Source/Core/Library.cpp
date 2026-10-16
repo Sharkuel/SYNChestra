@@ -164,6 +164,26 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
     return {};
 }
 
+juce::Array<int> LibraryRecorder::findSoundingNotes (juce::AudioPluginInstance& plugin, NoteRenderer::Settings settings,
+                                                     int midiChannel, std::function<bool (int)> onProgress)
+{
+    // Short and a little deaf on purpose: a note only needs to be heard, and a pad's tail from
+    // the last note (cut off after a few seconds) must not count as the next one sounding.
+    settings.maxSeconds = 3.0;
+    settings.giveUpSeconds = 0.5;
+    settings.startDb = -50.0;
+    juce::Array<int> found;
+    NoteRenderer renderer (plugin, settings);
+    for (int note = 0; note < 128; ++note)
+    {
+        if (onProgress && ! onProgress (note))
+            break;
+        if (renderer.render (note, 100, 0.2, midiChannel).getNumSamples() > 0)
+            found.add (note);
+    }
+    return found;
+}
+
 juce::String LibraryRecorder::safeName (const juce::String& s)
 {
     auto name = s.removeCharacters ("\\/:*?\"<>|").trim();

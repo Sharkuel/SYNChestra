@@ -32,6 +32,12 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    **Add keys** adds a keyboard range (a recording every 3 keys from C2 to C7 by default).
    **Add drum** adds a single unpitched one-shot note. **Listen** plays the selected row's middle
    note, held as it will be recorded.
+
+   The keyboard at the bottom plays the plugin on the selected row's channel, and shades that
+   row's keys. **Find notes** plays every key once on that channel and marks the ones that make
+   a sound with a green bar, so you can see which keys a patch uses (handy for drum kits and
+   multi-sampled patches with gaps). Right-click a key to set it as the row's lowest or highest
+   note, add a drum on it, or set the row to the run of sounding keys around it.
 4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
 
 The library is saved in the **Save to** folder (Documents/SYNChestra by default):

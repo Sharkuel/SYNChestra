@@ -212,6 +212,13 @@ int main (int argc, char* argv[])
         }
     }
 
+    // Find notes hears every key but the silent one, and stops when asked.
+    const auto found = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, nullptr);
+    check (found.size() == 127 && ! found.contains (61) && found.contains (0) && found.contains (127),
+           "Find notes hears every sounding key");
+    const auto someFound = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, [] (int note) { return note < 10; });
+    check (someFound.size() == 10, "Find notes stops when cancelled");
+
     // Cancelling keeps what was recorded.
     juce::String stopped;
     const auto partial = syn::LibraryRecorder::record (synth, map, {}, folder.getSiblingFile ("Stopped"),
