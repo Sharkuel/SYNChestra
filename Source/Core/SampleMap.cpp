@@ -100,6 +100,37 @@ Group Group::drum (const juce::String& name, int note)
     return g;
 }
 
+std::vector<Group> Group::fromSoundingNotes (const juce::Array<int>& sorted, bool drums, int midiChannel)
+{
+    std::vector<Group> rows;
+    for (int i = 0; i < sorted.size();)
+    {
+        int j = i;
+        while (j + 1 < sorted.size() && sorted[j + 1] == sorted[j] + 1)
+            ++j;
+        const int low = sorted[i], high = sorted[j];
+        if (drums || high - low < 3)
+        {
+            for (int note = low; note <= high; ++note)
+            {
+                rows.push_back (drum (noteName (note), note));
+                rows.back().midiChannel = midiChannel;
+            }
+        }
+        else
+        {
+            auto g = keys();
+            g.name = "Keys " + noteName (low) + "-" + noteName (high);
+            g.lowNote = low;
+            g.highNote = high;
+            g.midiChannel = midiChannel;
+            rows.push_back (g);
+        }
+        i = j + 1;
+    }
+    return rows;
+}
+
 int SampleMap::totalRecordings() const
 {
     int total = 0;

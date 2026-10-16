@@ -49,6 +49,11 @@ public:
                            const juce::File& libraryFolder, std::function<bool (const Progress&)> onProgress,
                            juce::String& report);
 
+    /** Plays every MIDI note once, briefly, at velocity 100 on midiChannel and returns those that
+        make a sound. onProgress gets the note being tried and returns false to stop. */
+    static juce::Array<int> findSoundingNotes (juce::AudioPluginInstance&, NoteRenderer::Settings, int midiChannel,
+                                               std::function<bool (int note)> onProgress);
+
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 

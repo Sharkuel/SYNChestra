@@ -97,6 +97,12 @@ void checkMapMaths()
     check (drum.keyRangeFor (0) == juce::Range<int> (38, 38) && ! drum.pitched, "a drum plays on its own key only");
     check (syn::noteName (60) == "C4" && syn::noteName (61) == "C#4", "note names use C4 for 60");
 
+    const auto found = syn::Group::fromSoundingNotes ({ 36, 37, 38, 39, 40, 41, 50, 51, 70 }, false, 2);
+    check (found.size() == 4 && found[0].pitched && found[0].lowNote == 36 && found[0].highNote == 41
+               && found[0].midiChannel == 2 && ! found[1].pitched && found[1].lowNote == 50 && found[3].lowNote == 70,
+           "found keys become a key row per run, and drums for lone keys");
+    check (syn::Group::fromSoundingNotes ({ 36, 37, 38, 39, 40 }, true, 10).size() == 5, "as drums, every key gets a row");
+
     syn::SampleMap m;
     m.libraryName = "Saved";
     m.groups = { g, drum };
@@ -211,6 +217,13 @@ int main (int argc, char* argv[])
                    "the drum sits on its own key, unpitched");
         }
     }
+
+    // Find notes hears every key but the silent one, and stops when asked.
+    const auto found = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, nullptr);
+    check (found.size() == 127 && ! found.contains (61) && found.contains (0) && found.contains (127),
+           "Find notes hears every sounding key");
+    const auto someFound = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, [] (int note) { return note < 10; });
+    check (someFound.size() == 10, "Find notes stops when cancelled");
 
     // Cancelling keeps what was recorded.
     juce::String stopped;

@@ -40,6 +40,10 @@ struct Group
 
     static Group keys();
     static Group drum (const juce::String& name, int note);
+
+    /** Rows for the keys "Find notes" heard, on midiChannel. As drums, every key gets its own row;
+        otherwise each run of 4 or more neighbouring keys becomes a key row and shorter runs drums. */
+    static std::vector<Group> fromSoundingNotes (const juce::Array<int>& sorted, bool drums, int midiChannel);
 };
 
 /** Everything a library is recorded from. */
