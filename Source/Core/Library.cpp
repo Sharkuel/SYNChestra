@@ -244,6 +244,8 @@ juce::String Library::toDecentSampler() const
             auto* k = tab->createNewChildElement ("labeled-knob");
             place (*k, c);
             k->setAttribute ("label", c.label);
+            if (const auto style = c.decentSamplerStyle(); style.isNotEmpty())
+                k->setAttribute ("style", style);
             k->setAttribute ("type", "float");
             k->setAttribute ("minValue", knob.min);
             k->setAttribute ("maxValue", knob.max);

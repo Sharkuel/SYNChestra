@@ -42,7 +42,8 @@ private:
     std::unique_ptr<Canvas> canvas;
     juce::TextButton addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." },
         resetButton { "Standard layout" }, removeButton { "Remove" };
-    juce::Label selectedName, labelCaption { {}, "Label" }, sizeCaption { {}, "Size" }, help;
+    juce::Label selectedName, labelCaption { {}, "Label" }, sizeCaption { {}, "Size" }, styleCaption { {}, "Style" }, help;
+    juce::ComboBox style;
     juce::TextEditor labelText;
     juce::Slider size { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     std::unique_ptr<juce::FileChooser> chooser;
