@@ -104,6 +104,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz,
                                 (juce::Component*) &effectKnobs, (juce::Component*) &backgroundButton,
+                                (juce::Component*) &skipSameLayers,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
@@ -206,6 +207,15 @@ MainComponent::MainComponent()
     };
     effectKnobs.setTooltip ("Adds Tone, Chorus, Delay, Reverb and Room knobs to the Decent Sampler panel. "
                             "They start off, so the library sounds as recorded.");
+    skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
+    skipSameLayers.onClick = [this]
+    {
+        map.skipSameLayers = skipSameLayers.getToggleState();
+        saveMap();
+    };
+    skipSameLayers.setTooltip ("Leaves out a velocity layer that sounds just like the louder one, only quieter. "
+                               "The louder recording covers its velocities and the sampler turns it down, which "
+                               "saves disk space and the rest of that layer's takes.");
     backgroundButton.onClick = [this] { chooseBackground(); };
     showBackground();
     refreshTable();
@@ -281,6 +291,8 @@ void MainComponent::resized()
     row.removeFromLeft (gap * 2);
     rateChoice.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (gap * 2);
+    skipSameLayers.setBounds (row.removeFromLeft (150));
+    row.removeFromLeft (gap);
     totalLabel.setBounds (row);
     area.removeFromBottom (gap);
 

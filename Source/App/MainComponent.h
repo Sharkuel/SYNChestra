@@ -80,7 +80,8 @@ private:
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" }, showButton { "Show plugin" },
         addKeysButton { "Add keys" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
         listenButton { "Listen" }, measureButton { "Measure" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
-    juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, effectKnobs { "Effect knobs" };
+    juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, effectKnobs { "Effect knobs" },
+        skipSameLayers { "Skip same layers" };
     juce::TextButton backgroundButton { "Background..." };
     juce::ComboBox pluginChoice, rateChoice;
     juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;
