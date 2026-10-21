@@ -259,6 +259,51 @@ int main (int argc, char* argv[])
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
 
+    // Release samples: the sound after key-up is kept as its own sample, played on key-up.
+    {
+        syn::SampleMap withRelease;
+        withRelease.libraryName = "Released";
+        syn::Group held;
+        held.name = "Keys";
+        held.lowNote = 57;
+        held.highNote = 59;
+        held.step = 2;
+        held.layers = 2;
+        held.roundRobins = 2;
+        held.holdSeconds = 0.5;
+        held.releaseSamples = true;
+        withRelease.groups = { held };
+        const auto releaseFolder = folder.getSiblingFile ("Released");
+        juce::String releaseReport;
+        const auto lib = syn::LibraryRecorder::record (synth, withRelease, {}, releaseFolder, nullptr, releaseReport);
+        int releases = 0;
+        const syn::Sample* firstRelease = nullptr;
+        for (const auto& s : lib.samples)
+            if (s.release)
+            {
+                ++releases;
+                firstRelease = firstRelease == nullptr ? &s : firstRelease;
+            }
+        check (lib.samples.size() == 2 * 2 * 2 + 2 * 2 && releases == 2 * 2,
+               "one release sample per note and layer, besides the round robins");
+        if (firstRelease != nullptr)
+            if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (releaseFolder.getChildFile (firstRelease->path)) })
+            {
+                const double seconds = (double) reader->lengthInSamples / reader->sampleRate;
+                check (firstRelease->path.endsWith ("_rel.wav") && seconds > 0.1 && seconds < 0.4,
+                       "a release sample is the sound after key-up (" + juce::String (seconds, 2) + " s)");
+            }
+        const auto releaseSfz = lib.toSfz();
+        check (countOf (releaseSfz, "trigger=release") == 4 && releaseSfz.contains ("ampeg_release=0.1"),
+               "the .sfz plays release samples on key-up, and fades the held sound fast");
+        const auto releaseDs = juce::parseXML (lib.toDecentSampler());
+        auto* groups = releaseDs != nullptr ? releaseDs->getChildByName ("groups") : nullptr;
+        check (groups != nullptr && groups->getNumChildElements() == 2
+                   && groups->getChildElement (1)->getStringAttribute ("trigger") == "release"
+                   && groups->getChildElement (1)->getNumChildElements() == 4,
+               "the .dspreset has a key-up group");
+    }
+
     // Keyswitches: each articulation row is recorded after its switch, and the presets switch too.
     {
         check (syn::Group::tidyKeyswitch ("c1") == "C1" && syn::Group::tidyKeyswitch ("24") == "C1"

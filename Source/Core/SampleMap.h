@@ -19,6 +19,7 @@ struct Group
     bool pitched = true;               // false: every key plays its own recording unpitched (drums)
     bool oneShot = false;              // true: a recording plays to its end, whatever the key does
     bool loop = true;                  // loop sustained recordings, so a key can be held for as long as you like
+    bool releaseSamples = false;       // also keep the sound after key-up, played by the sampler when a key is let go
     juce::String keyswitch;            // sent before each note to pick an articulation: a note ("C0") or a CC ("CC32=10")
     int midiChannel = 1;
 

@@ -145,24 +145,26 @@ MainComponent::MainComponent()
 
     auto& header = table.getHeader();
     header.addColumn ("Record", colOn, 56);
-    header.addColumn ("Name", colName, 130);
+    header.addColumn ("Name", colName, 110);
     header.addColumn ("Lowest", colLow, 64);
     header.addColumn ("Highest", colHigh, 64);
     header.addColumn ("Every", colStep, 56);
     header.addColumn ("Layers", colLayers, 56);
-    header.addColumn ("Round robins", colRoundRobins, 96);
+    header.addColumn ("Round robins", colRoundRobins, 86);
     header.addColumn ("Hold (s)", colHold, 64);
     header.addColumn ("Release (s)", colRelease, 80);
     header.addColumn ("Pitched", colPitched, 60);
     header.addColumn ("One-shot", colOneShot, 66);
     header.addColumn ("Loop", colLoop, 46);
+    header.addColumn ("Key-up", colKeyUp, 56);
     header.addColumn ("Channel", colChannel, 64);
     header.addColumn ("Keyswitch", colSwitch, 76);
-    header.addColumn ("Recordings", colCount, 80);
+    header.addColumn ("Recordings", colCount, 76);
     table.setRowHeight (26);
     table.setTooltip ("Lowest and Highest take note numbers or names (C4 is 60). Every: a recording every this many "
                       "keys. Layers: velocity layers. Hold: how long each note is held before its release. Loop: "
                       "sustained recordings get a seamless loop, so a key can be held for as long as you like. "
+                      "Key-up: also record the sound of letting go (dampers, fret noise) and play it on key-up. "
                       "Keyswitch: a note (C1) or CC (CC32=10) sent before each note to pick an articulation.");
 
     decentSampler.setToggleState (settings->getBoolValue ("writeDecentSampler", true), juce::dontSendNotification);
@@ -985,7 +987,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
     }
     const auto& g = map.groups[(size_t) row];
 
-    if (column == colOn || column == colPitched || column == colOneShot || column == colLoop)
+    if (column == colOn || column == colPitched || column == colOneShot || column == colLoop || column == colKeyUp)
     {
         auto* cell = dynamic_cast<ToggleCell*> (existing);
         if (cell == nullptr)
@@ -993,7 +995,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
             delete existing;
             cell = new ToggleCell();
         }
-        const bool on = column == colOn ? g.enabled : column == colPitched ? g.pitched : column == colLoop ? g.loop : g.oneShot;
+        const bool on = column == colOn ? g.enabled : column == colPitched ? g.pitched : column == colLoop ? g.loop : column == colKeyUp ? g.releaseSamples : g.oneShot;
         cell->box.setToggleState (on, juce::dontSendNotification);
         cell->box.onClick = [this, row, column, cell]
         {
@@ -1003,6 +1005,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
             if (column == colPitched) group.pitched = state;
             if (column == colOneShot) group.oneShot = state;
             if (column == colLoop) group.loop = state;
+            if (column == colKeyUp) group.releaseSamples = state;
             saveMap();
             refreshTable();
         };

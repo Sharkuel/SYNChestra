@@ -11,16 +11,25 @@ juce::String num (double v)
     return juce::String (v, 3).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
 }
 
-/** The samples of one group, grouped by note and layer so round robins stay together. */
-std::map<std::pair<int, int>, std::vector<const Sample*>> takesOf (const std::vector<Sample>& samples, int group)
+/** The samples of one group, grouped by note and layer so round robins stay together: the
+    ones played on key-down, or with release true the ones played on key-up. */
+std::map<std::pair<int, int>, std::vector<const Sample*>> takesOf (const std::vector<Sample>& samples, int group,
+                                                                    bool release = false)
 {
     std::map<std::pair<int, int>, std::vector<const Sample*>> sets;
     for (const auto& s : samples)
-        if (s.group == group)
+        if (s.group == group && s.release == release)
             sets[{ s.rootNote, s.velocities.getEnd() }].push_back (&s);
     return sets;
 }
 } // namespace
+
+double Library::mainRelease (int g) const
+{
+    // With key-up samples the recording fades fast and the release sample takes over.
+    const auto& group = map.groups[(size_t) g];
+    return takesOf (samples, g, true).empty() ? group.releaseSeconds : juce::jmin (group.releaseSeconds, 0.1);
+}
 
 std::vector<int> Library::articulationRows() const
 {
@@ -83,7 +92,7 @@ juce::String Library::toSfz() const
             if (group.oneShot)
                 out << " loop_mode=one_shot";
             else
-                out << " ampeg_release=" << num (group.releaseSeconds);
+                out << " ampeg_release=" << num (mainRelease (g));
             if (takes.size() > 1)
                 out << " seq_length=" << (int) takes.size();
             if (const int note = group.switchNote(); note >= 0)
@@ -102,6 +111,23 @@ juce::String Library::toSfz() const
                     out << " loop_mode=loop_continuous loop_start=" << s->loopStart << " loop_end=" << s->loopEnd;
                 out << " sample=" << s->path << "\n";
             }
+        }
+        // The key-up sounds: played once, to their end, when a key is let go.
+        for (const auto& [key, takes] : takesOf (samples, g, true))
+        {
+            const auto& r = *takes.front();
+            out << "<group> group_label=" << group.name.replaceCharacter (' ', '_') << "_release trigger=release loop_mode=one_shot"
+                << " lokey=" << r.keys.getStart() << " hikey=" << r.keys.getEnd()
+                << " lovel=" << r.velocities.getStart() << " hivel=" << r.velocities.getEnd()
+                << " pitch_keycenter=" << r.rootNote;
+            if (! group.pitched)
+                out << " pitch_keytrack=0";
+            if (const int note = group.switchNote(); note >= 0)
+                out << " sw_lokey=" << switchLow << " sw_hikey=" << switchHigh << " sw_last=" << note
+                    << " sw_default=" << switchDefault;
+            else if (const auto [cc, value] = group.switchCc(); cc >= 0)
+                out << " locc" << cc << "=" << value << " hicc" << cc << "=" << value;
+            out << "\n<region> sample=" << r.path << "\n";
         }
         out << "\n";
     }
@@ -200,20 +226,30 @@ juce::String Library::toDecentSampler() const
     for (int g = 0; g < (int) map.groups.size(); ++g)
         if (! takesOf (samples, g).empty())
             dsIndex[g] = (int) dsIndex.size();
+    std::map<int, int> dsReleaseIndex;   // key-up groups come after all the others
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+        if (dsIndex.count (g) > 0 && ! takesOf (samples, g, true).empty())
+            dsReleaseIndex[g] = (int) (dsIndex.size() + dsReleaseIndex.size());
     const auto articulations = articulationRows();
     if (articulations.size() > 1)
         title->setAttribute ("width", panelWidth - 280);   // room for the articulation menu
     auto chooseArticulation = [&] (juce::XmlElement& parent, int chosen)
     {
-        for (const int g : articulations)
+        auto bind = [&parent] (int position, bool on)
         {
             auto* b = parent.createNewChildElement ("binding");
             b->setAttribute ("type", "general");
             b->setAttribute ("level", "group");
-            b->setAttribute ("position", dsIndex[g]);
+            b->setAttribute ("position", position);
             b->setAttribute ("parameter", "ENABLED");
             b->setAttribute ("translation", "fixed_value");
-            b->setAttribute ("translationValue", g == chosen ? "true" : "false");
+            b->setAttribute ("translationValue", on ? "true" : "false");
+        };
+        for (const int g : articulations)
+        {
+            bind (dsIndex[g], g == chosen);
+            if (dsReleaseIndex.count (g) > 0)
+                bind (dsReleaseIndex[g], g == chosen);
         }
     };
     if (articulations.size() > 1)
@@ -262,8 +298,8 @@ juce::String Library::toDecentSampler() const
         // A one-shot keeps ringing after key-up: the release lasts as long as the longest take could.
         if (group.oneShot)
             xml->setAttribute ("release", 30.0);
-        else if (! juce::approximatelyEqual (group.releaseSeconds, release))
-            xml->setAttribute ("release", group.releaseSeconds);
+        else if (! juce::approximatelyEqual (mainRelease (g), release))
+            xml->setAttribute ("release", mainRelease (g));
         bool anyRoundRobin = false;
         for (const auto& [key, takes] : sets)
             anyRoundRobin = anyRoundRobin || takes.size() > 1;
@@ -293,6 +329,32 @@ juce::String Library::toDecentSampler() const
                     e->setAttribute ("seqLength", (int) takes.size());
                 }
             }
+    }
+
+    // The key-up sounds, after every other group so the indexes above hold.
+    for (const auto& [g, index] : dsReleaseIndex)
+    {
+        const auto& group = map.groups[(size_t) g];
+        auto* xml = groups->createNewChildElement ("group");
+        xml->setAttribute ("name", group.name + " release");
+        xml->setAttribute ("trigger", "release");
+        xml->setAttribute ("release", 30.0);   // plays to its end
+        if (articulations.size() > 1 && ! articulations.empty() && articulations.front() != g
+            && std::find (articulations.begin(), articulations.end(), g) != articulations.end())
+            xml->setAttribute ("enabled", "false");
+        for (const auto& [key, takes] : takesOf (samples, g, true))
+        {
+            const auto* r = takes.front();
+            auto* e = xml->createNewChildElement ("sample");
+            e->setAttribute ("path", r->path);
+            e->setAttribute ("rootNote", r->rootNote);
+            e->setAttribute ("loNote", r->keys.getStart());
+            e->setAttribute ("hiNote", r->keys.getEnd());
+            e->setAttribute ("loVel", r->velocities.getStart());
+            e->setAttribute ("hiVel", r->velocities.getEnd());
+            if (! group.pitched)
+                e->setAttribute ("pitchKeyTrack", 0);
+        }
     }
     return root.toString();
 }
@@ -485,6 +547,28 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     s.path = groupFolder + "/" + safeName (group.name) + "_" + noteName (note).replace ("#", "s")
                              + "_v" + juce::String (velocity).paddedLeft ('0', 3)
                              + (takes > 1 ? "_rr" + juce::String (take) : juce::String()) + ".wav";
+                    if (group.releaseSamples && ! group.oneShot && take == 1)
+                    {
+                        // What follows key-up is the release: dampers, fret noise, the room. A
+                        // couple of milliseconds of fade-in keep the cut from clicking.
+                        const int tail = audio.getNumSamples() - noteOff;
+                        if (noteOff > 0 && tail > (int) (settings.sampleRate * 0.02))
+                        {
+                            juce::AudioBuffer<float> releaseAudio (audio.getNumChannels(), tail);
+                            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+                                releaseAudio.copyFrom (ch, 0, audio, ch, noteOff, tail);
+                            releaseAudio.applyGainRamp (0, juce::jmin (tail, (int) (settings.sampleRate * 0.002)), 0.0f, 1.0f);
+                            auto r = s;
+                            r.release = true;
+                            r.roundRobin = r.roundRobins = 1;
+                            r.path = r.path.upToLastOccurrenceOf (".wav", false, false).upToLastOccurrenceOf ("_rr", false, false)
+                                     + "_rel.wav";
+                            if (writeWav (folder.getChildFile (r.path), releaseAudio, settings.sampleRate))
+                                library.samples.push_back (r);
+                            else
+                                failed.add (r.path);
+                        }
+                    }
                     if (group.loop && ! group.oneShot)
                     {
                         const auto loop = Looper::find (audio, noteOff, settings.sampleRate);
@@ -519,13 +603,13 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
     }
 
     // Round robins of a note and layer that came out silent leave gaps: renumber what's there.
-    std::map<std::tuple<int, int, int>, int> counts;
+    std::map<std::tuple<int, int, int, bool>, int> counts;
     for (const auto& s : library.samples)
-        ++counts[{ s.group, s.rootNote, s.velocities.getEnd() }];
-    std::map<std::tuple<int, int, int>, int> seen;
+        ++counts[{ s.group, s.rootNote, s.velocities.getEnd(), s.release }];
+    std::map<std::tuple<int, int, int, bool>, int> seen;
     for (auto& s : library.samples)
     {
-        const std::tuple<int, int, int> key { s.group, s.rootNote, s.velocities.getEnd() };
+        const std::tuple<int, int, int, bool> key { s.group, s.rootNote, s.velocities.getEnd(), s.release };
         s.roundRobin = ++seen[key];
         s.roundRobins = counts[key];
     }
