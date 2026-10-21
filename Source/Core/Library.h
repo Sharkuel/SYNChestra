@@ -16,6 +16,7 @@ struct Sample
     int roundRobin = 1;         // 1-based take number
     int roundRobins = 1;        // takes for this note and layer
     int loopStart = -1, loopEnd = -1;   // inclusive sample frames, when the recording loops
+    bool release = false;       // the sound after key-up, played when the key is let go
     bool loops() const { return loopStart >= 0 && loopEnd > loopStart; }
 };
 
@@ -24,6 +25,9 @@ struct Library
 {
     SampleMap map;
     std::vector<Sample> samples;
+
+    /** A group's release on key-up: shorter when it has key-up samples to take over. */
+    double mainRelease (int group) const;
 
     /** The rows with recordings and a keyswitch: the library's articulations, in table order. */
     std::vector<int> articulationRows() const;

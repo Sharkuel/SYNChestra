@@ -60,6 +60,7 @@ juce::ValueTree Group::toValueTree() const
     t.setProperty ("oneShot", oneShot, nullptr);
     t.setProperty ("loop", loop, nullptr);
     t.setProperty ("keyswitch", keyswitch, nullptr);
+    t.setProperty ("releaseSamples", releaseSamples, nullptr);
     t.setProperty ("midiChannel", midiChannel, nullptr);
     return t;
 }
@@ -80,6 +81,7 @@ Group Group::fromValueTree (const juce::ValueTree& t)
     g.oneShot = t.getProperty ("oneShot", g.oneShot);
     g.loop = t.getProperty ("loop", g.loop);
     g.keyswitch = t.getProperty ("keyswitch", g.keyswitch);
+    g.releaseSamples = t.getProperty ("releaseSamples", g.releaseSamples);
     g.midiChannel = t.getProperty ("midiChannel", g.midiChannel);
     return g;
 }
