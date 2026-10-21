@@ -59,6 +59,7 @@ juce::ValueTree Group::toValueTree() const
     t.setProperty ("pitched", pitched, nullptr);
     t.setProperty ("oneShot", oneShot, nullptr);
     t.setProperty ("loop", loop, nullptr);
+    t.setProperty ("keyswitch", keyswitch, nullptr);
     t.setProperty ("midiChannel", midiChannel, nullptr);
     return t;
 }
@@ -78,6 +79,7 @@ Group Group::fromValueTree (const juce::ValueTree& t)
     g.pitched = t.getProperty ("pitched", g.pitched);
     g.oneShot = t.getProperty ("oneShot", g.oneShot);
     g.loop = t.getProperty ("loop", g.loop);
+    g.keyswitch = t.getProperty ("keyswitch", g.keyswitch);
     g.midiChannel = t.getProperty ("midiChannel", g.midiChannel);
     return g;
 }
@@ -101,6 +103,43 @@ Group Group::drum (const juce::String& name, int note)
     g.loop = false;
     g.midiChannel = 10;
     return g;
+}
+
+int Group::switchNote() const
+{
+    return keyswitch.startsWithIgnoreCase ("CC") ? -1 : parseNote (keyswitch);
+}
+
+std::pair<int, int> Group::switchCc() const
+{
+    if (! keyswitch.startsWithIgnoreCase ("CC") || ! keyswitch.contains ("="))
+        return { -1, -1 };
+    const auto number = keyswitch.substring (2).upToFirstOccurrenceOf ("=", false, false).trim();
+    const auto value = keyswitch.fromFirstOccurrenceOf ("=", false, false).trim();
+    if (number.isEmpty() || value.isEmpty() || ! number.containsOnly ("0123456789") || ! value.containsOnly ("0123456789"))
+        return { -1, -1 };
+    return { juce::jlimit (0, 127, number.getIntValue()), juce::jlimit (0, 127, value.getIntValue()) };
+}
+
+std::vector<juce::MidiMessage> Group::switchMessages() const
+{
+    const int channel = juce::jlimit (1, 16, midiChannel);
+    if (const int note = switchNote(); note >= 0)
+        return { juce::MidiMessage::noteOn (channel, note, (juce::uint8) 100), juce::MidiMessage::noteOff (channel, note) };
+    if (const auto [cc, value] = switchCc(); cc >= 0)
+        return { juce::MidiMessage::controllerEvent (channel, cc, value) };
+    return {};
+}
+
+juce::String Group::tidyKeyswitch (const juce::String& text)
+{
+    Group g;
+    g.keyswitch = text.removeCharacters (" ");
+    if (const int note = g.switchNote(); note >= 0)
+        return noteName (note);
+    if (const auto [cc, value] = g.switchCc(); cc >= 0)
+        return "CC" + juce::String (cc) + "=" + juce::String (value);
+    return {};
 }
 
 std::vector<Group> Group::fromSoundingNotes (const juce::Array<int>& sorted, bool drums, int midiChannel)
@@ -164,6 +203,17 @@ SampleMap SampleMap::fromValueTree (const juce::ValueTree& t)
         if (child.hasType ("Group"))
             m.groups.push_back (Group::fromValueTree (child));
     return m;
+}
+
+int parseNote (juce::String text)
+{
+    text = text.trim();
+    if (text.containsOnly ("0123456789"))
+        return text.isEmpty() ? -1 : juce::jlimit (0, 127, text.getIntValue());
+    for (int n = 0; n < 128; ++n)
+        if (noteName (n).equalsIgnoreCase (text))
+            return n;
+    return -1;
 }
 
 juce::String noteName (int note)

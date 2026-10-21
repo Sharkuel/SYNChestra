@@ -25,6 +25,9 @@ struct Library
     SampleMap map;
     std::vector<Sample> samples;
 
+    /** The rows with recordings and a keyswitch: the library's articulations, in table order. */
+    std::vector<int> articulationRows() const;
+
     /** <Library>.sfz, for sforzando, Sfizz, TAL-Sampler and other SFZ players. */
     juce::String toSfz() const;
 

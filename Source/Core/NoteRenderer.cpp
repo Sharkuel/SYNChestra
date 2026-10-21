@@ -67,6 +67,17 @@ juce::AudioBuffer<float> NoteRenderer::render (int note, int velocity, double ho
 {
     midiChannel = juce::jlimit (1, 16, midiChannel);
     waitForSilence (midiChannel);
+    if (! switchMessages.empty())
+    {
+        // A block for the switch to land in, and one more so the plugin has acted on it.
+        const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels(), 2);
+        juce::AudioBuffer<float> scratch (channels, settings.blockSize);
+        juce::MidiBuffer switches;
+        for (size_t i = 0; i < switchMessages.size(); ++i)
+            switches.addEvent (switchMessages[i], juce::jmin ((int) i, settings.blockSize - 1));
+        processBlock (scratch, switches);
+        processBlock (scratch, switches);
+    }
 
     const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels(), 2);
     const int block = settings.blockSize;

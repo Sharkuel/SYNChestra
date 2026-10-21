@@ -7,7 +7,8 @@ namespace
 {
 /** Each note plays a sine at its pitch, louder with velocity, while held, then fades over
     0.2 s. The left side is louder than the right, so the test can tell stereo was kept.
-    Notes from 100 up are plucks: they die away over about 3.5 s and ignore note-off. */
+    Notes from 100 up are plucks: they die away over about 3.5 s and ignore note-off.
+    C1 and C#1 (24, 25) are keyswitches, silent: after C#1 notes play at a quarter of the level, until C1. */
 class FakeSynth final : public juce::AudioPluginInstance
 {
 public:
@@ -55,9 +56,14 @@ public:
         {
             render (m.samplePosition);
             const auto msg = m.getMessage();
+            if (msg.isNoteOn() && (msg.getNoteNumber() == 24 || msg.getNoteNumber() == 25))
+            {
+                soft = msg.getNoteNumber() == 25;
+                continue;
+            }
             if (msg.isNoteOn() && msg.getNoteNumber() != 61)   // C#4 plays nothing
             {
-                level = msg.getFloatVelocity() * 0.5;
+                level = msg.getFloatVelocity() * (soft ? 0.125 : 0.5);
                 frequency = juce::MidiMessage::getMidiNoteInHertz (msg.getNoteNumber());
                 held = true;
                 pluck = msg.getNoteNumber() >= 100;
@@ -73,7 +79,7 @@ public:
 
 private:
     double rate = 48000.0, level = 0.0, phase = 0.0, frequency = 440.0;
-    bool held = false, pluck = false;
+    bool held = false, pluck = false, soft = false;
 };
 
 int failures = 0;
@@ -253,6 +259,64 @@ int main (int argc, char* argv[])
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
 
+    // Keyswitches: each articulation row is recorded after its switch, and the presets switch too.
+    {
+        check (syn::Group::tidyKeyswitch ("c1") == "C1" && syn::Group::tidyKeyswitch ("24") == "C1"
+                   && syn::Group::tidyKeyswitch ("cc 32 = 10") == "CC32=10" && syn::Group::tidyKeyswitch ("hello").isEmpty(),
+               "keyswitches are read as notes or CCs");
+        syn::Group cc;
+        cc.keyswitch = "CC32=10";
+        cc.midiChannel = 3;
+        const auto messages = cc.switchMessages();
+        check (messages.size() == 1 && messages[0].isControllerOfType (32) && messages[0].getControllerValue() == 10
+                   && messages[0].getChannel() == 3,
+               "a CC keyswitch sends its CC on the row's channel");
+
+        syn::SampleMap switched;
+        switched.libraryName = "Switched";
+        syn::Group loud;
+        loud.name = "Sustain";
+        loud.lowNote = loud.highNote = 60;
+        loud.layers = 1;
+        loud.holdSeconds = 0.3;
+        loud.keyswitch = "C1";
+        auto quiet = loud;
+        quiet.name = "Muted";
+        quiet.keyswitch = "C#1";
+        switched.groups = { quiet, loud };   // quiet first: the switch must be sent for every row
+        const auto switchFolder = folder.getSiblingFile ("Switched");
+        juce::String switchReport;
+        const auto lib = syn::LibraryRecorder::record (synth, switched, {}, switchFolder, nullptr, switchReport);
+        float peaks[2] = {};
+        for (int i = 0; i < 2 && i < (int) lib.samples.size(); ++i)
+            if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (switchFolder.getChildFile (lib.samples[(size_t) i].path)) })
+            {
+                juce::AudioBuffer<float> audio (2, (int) reader->lengthInSamples);
+                reader->read (&audio, 0, audio.getNumSamples(), 0, true, true);
+                peaks[i] = audio.getMagnitude (0, 0, audio.getNumSamples());
+            }
+        check (lib.samples.size() == 2 && peaks[0] > 0.0f && peaks[1] > 3.0f * peaks[0],
+               "each articulation is recorded after its keyswitch (" + juce::String (peaks[0], 3) + " vs " + juce::String (peaks[1], 3) + ")");
+        const auto switchSfz = lib.toSfz();
+        check (switchSfz.contains ("sw_lokey=24 sw_hikey=25 sw_last=25 sw_default=25") && switchSfz.contains ("sw_last=24"),
+               "the .sfz switches articulations with the same keys");
+        const auto switchDs = juce::parseXML (lib.toDecentSampler());
+        if (switchDs != nullptr)
+        {
+            auto* menu = switchDs->getChildByName ("ui")->getChildByName ("tab")->getChildByName ("menu");
+            check (menu != nullptr && menu->getNumChildElements() == 2
+                       && menu->getChildElement (1)->getStringAttribute ("name") == "Sustain",
+                   "the .dspreset has an articulation menu");
+            auto* groups = switchDs->getChildByName ("groups");
+            check (groups->getChildElement (0)->getStringAttribute ("enabled", "true") == "true"
+                       && groups->getChildElement (1)->getStringAttribute ("enabled") == "false",
+                   "only the first articulation plays to start with");
+            auto* midi = switchDs->getChildByName ("midi");
+            check (midi != nullptr && midi->getNumChildElements() == 2 && midi->getChildElement (1)->getIntAttribute ("note") == 24,
+                   "the .dspreset's keyswitch notes pick articulations");
+        }
+    }
+
     // Looping: a held sine loops seamlessly; a pluck dies away while held, so it doesn't.
     {
         syn::SampleMap loopMap;
@@ -314,7 +378,7 @@ int main (int argc, char* argv[])
 
     // Find notes hears every key but the silent one, and stops when asked.
     const auto found = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, nullptr);
-    check (found.size() == 127 && ! found.contains (61) && found.contains (0) && found.contains (127),
+    check (found.size() == 125 && ! found.contains (61) && ! found.contains (24) && found.contains (0) && found.contains (127),
            "Find notes hears every sounding key");
     const auto someFound = syn::LibraryRecorder::findSoundingNotes (synth, {}, 1, [] (int note) { return note < 10; });
     check (someFound.size() == 10, "Find notes stops when cancelled");
