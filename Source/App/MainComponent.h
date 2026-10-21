@@ -6,6 +6,7 @@
 #include "../Core/LibraryPlayer.h"
 #include "LiveHost.h"
 #include "NoteKeyboard.h"
+#include "PanelEditor.h"
 
 /** Find instrument plugins, load one, describe what to record, and record it into a
     Decent Sampler and SFZ library. */
@@ -56,8 +57,7 @@ private:
     void refreshTable();
     juce::File outputFolder() const;
     void chooseOutputFolder();
-    void chooseBackground();
-    void showBackground();
+    void showPanelEditor();
     void showOutputFolder();
     double sampleRate() const;
     void setLive (bool on);
@@ -96,7 +96,9 @@ private:
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, effectKnobs { "Effect knobs" },
         skipSameLayers { "Skip same layers" };
     juce::TextButton projectButton { "Project..." };
-    juce::TextButton backgroundButton { "Background..." };
+    juce::TextButton panelButton { "Panel..." };
+    std::unique_ptr<juce::DocumentWindow> panelWindow;
+    PanelEditor* panelEditor = nullptr;   // in panelWindow
     juce::TextButton previewButton { "Try library" };
     juce::ComboBox pluginChoice, rateChoice, outputChoice;
     juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;

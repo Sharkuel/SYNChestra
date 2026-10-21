@@ -67,9 +67,22 @@ juce::String Library::toSfz() const
         }
     }
 
+    // The panel's Volume and Release knobs, as named CC knobs: SFZ players list them by name
+    // (CC7 is volume, CC72 release time, as on most synths). SFZ has no standard panel for the rest.
+    juce::String volumeKnob, releaseKnob;
+    for (const auto& c : map.panel.layout (false, false))
+        if (c.kind == PanelControl::volume)
+            volumeKnob = c.label.isNotEmpty() ? c.label : PanelControl::nameOf (c.kind);
+        else if (c.kind == PanelControl::release)
+            releaseKnob = c.label.isNotEmpty() ? c.label : PanelControl::nameOf (c.kind);
+
     juce::String out;
     out << "// " << map.libraryName << ", recorded with SYNChestra\n\n";
     out << "<control>\ndefault_path=\n";
+    if (volumeKnob.isNotEmpty())
+        out << "label_cc7=" << volumeKnob << "\nset_cc7=102\n";
+    if (releaseKnob.isNotEmpty())
+        out << "label_cc72=" << releaseKnob << "\nset_cc72=0\n";
     for (const auto& [cc, value] : ccDefaults)
         out << "set_cc" << cc << "=" << value << "\n";
     out << "\n";
@@ -93,6 +106,10 @@ juce::String Library::toSfz() const
                 out << " loop_mode=one_shot";
             else
                 out << " ampeg_release=" << num (mainRelease (g));
+            if (volumeKnob.isNotEmpty())
+                out << " amplitude_oncc7=100";
+            if (releaseKnob.isNotEmpty() && ! group.oneShot)
+                out << " ampeg_release_oncc72=5";
             if (takes.size() > 1)
                 out << " seq_length=" << (int) takes.size();
             if (const int note = group.switchNote(); note >= 0)
@@ -122,6 +139,8 @@ juce::String Library::toSfz() const
                 << " pitch_keycenter=" << r.rootNote;
             if (! group.pitched)
                 out << " pitch_keytrack=0";
+            if (volumeKnob.isNotEmpty())
+                out << " amplitude_oncc7=100";
             if (const int note = group.switchNote(); note >= 0)
                 out << " sw_lokey=" << switchLow << " sw_hikey=" << switchHigh << " sw_last=" << note
                     << " sw_default=" << switchDefault;
@@ -136,7 +155,6 @@ juce::String Library::toSfz() const
 
 namespace
 {
-constexpr int panelWidth = 812, panelHeight = 375;   // Decent Sampler's recommended panel size
 constexpr const char* backgroundPath = "Images/background.png";
 } // namespace
 
@@ -145,47 +163,6 @@ juce::String Library::toDecentSampler() const
     juce::XmlElement root ("DecentSampler");
     root.setAttribute ("minVersion", "1.0.0");
 
-    // A front panel: volume and release for the whole instrument, the effects' knobs, and the
-    // background picture if there is one (writePresets copies it to Images/background.png).
-    auto* ui = root.createNewChildElement ("ui");
-    ui->setAttribute ("width", panelWidth);
-    ui->setAttribute ("height", panelHeight);
-    ui->setAttribute ("bgColor", "FF22282E");
-    if (map.backgroundImage.isNotEmpty())
-        ui->setAttribute ("bgImage", backgroundPath);
-    auto* tab = ui->createNewChildElement ("tab");
-    tab->setAttribute ("name", "main");
-    auto* title = tab->createNewChildElement ("label");
-    title->setAttribute ("x", 20);
-    title->setAttribute ("y", 20);
-    title->setAttribute ("width", 772);
-    title->setAttribute ("height", 40);
-    title->setAttribute ("text", map.libraryName);
-    title->setAttribute ("textSize", 28);
-    title->setAttribute ("textColor", "FFFFFFFF");
-    // Knobs sit in a row along the bottom, so a background picture shows above them.
-    int knobX = 20;
-    auto knob = [tab, &knobX] (const juce::String& label, double min, double max, double value,
-                               const juce::String& type, int effect, const juce::String& parameter)
-    {
-        auto* k = tab->createNewChildElement ("labeled-knob");
-        k->setAttribute ("x", knobX);
-        k->setAttribute ("y", panelHeight - 110);
-        k->setAttribute ("width", 90);
-        k->setAttribute ("height", 90);
-        k->setAttribute ("label", label);
-        k->setAttribute ("type", "float");
-        k->setAttribute ("minValue", min);
-        k->setAttribute ("maxValue", max);
-        k->setAttribute ("value", value);
-        k->setAttribute ("textColor", "FFFFFFFF");
-        auto* b = k->createNewChildElement ("binding");
-        b->setAttribute ("type", type);
-        b->setAttribute ("level", "instrument");
-        b->setAttribute ("position", effect);
-        b->setAttribute ("parameter", parameter);
-        knobX += 110;
-    };
     // The Release knob sets the whole instrument's release, starting at the first held group's.
     // A group with its own release (or a one-shot) keeps it, as a group's envelope wins.
     double release = 0.3;
@@ -195,30 +172,6 @@ juce::String Library::toDecentSampler() const
             release = g.releaseSeconds;
             break;
         }
-    knob ("Volume", 0.0, 1.0, 0.8, "amp", 0, "AMP_VOLUME");
-    knob ("Release", 0.0, juce::jmax (5.0, release), release, "amp", 0, "ENV_RELEASE");
-    if (map.effects)
-    {
-        // Effects on the whole instrument, all off (or open) to start. A knob finds its effect by
-        // its place in this list.
-        auto* effects = root.createNewChildElement ("effects");
-        auto effect = [effects] (const juce::String& type, std::initializer_list<std::pair<const char*, double>> values)
-        {
-            auto* e = effects->createNewChildElement ("effect");
-            e->setAttribute ("type", type);
-            for (const auto& [name, value] : values)
-                e->setAttribute (name, value);
-        };
-        effect ("lowpass", { { "frequency", 22000.0 }, { "resonance", 0.7 } });
-        effect ("chorus", { { "mix", 0.0 }, { "modDepth", 0.2 }, { "modRate", 0.2 } });
-        effect ("delay", { { "delayTime", 0.3 }, { "feedback", 0.3 }, { "stereoOffset", 0.01 }, { "wetLevel", 0.0 } });
-        effect ("reverb", { { "roomSize", 0.7 }, { "damping", 0.3 }, { "wetLevel", 0.0 } });
-        knob ("Tone", 60.0, 22000.0, 22000.0, "effect", 0, "FX_FILTER_FREQUENCY");
-        knob ("Chorus", 0.0, 1.0, 0.0, "effect", 1, "FX_MIX");
-        knob ("Delay", 0.0, 1.0, 0.0, "effect", 2, "FX_WET_LEVEL");
-        knob ("Reverb", 0.0, 1.0, 0.0, "effect", 3, "FX_REVERB_WET_LEVEL");
-        knob ("Room", 0.0, 1.0, 0.7, "effect", 3, "FX_REVERB_ROOM_SIZE");
-    }
 
     // Articulations: only the first plays to start with. A menu on the panel picks another, and
     // so do the keyswitch notes, as in the plugin.
@@ -231,8 +184,6 @@ juce::String Library::toDecentSampler() const
         if (dsIndex.count (g) > 0 && ! takesOf (samples, g, true).empty())
             dsReleaseIndex[g] = (int) (dsIndex.size() + dsReleaseIndex.size());
     const auto articulations = articulationRows();
-    if (articulations.size() > 1)
-        title->setAttribute ("width", panelWidth - 280);   // room for the articulation menu
     auto chooseArticulation = [&] (juce::XmlElement& parent, int chosen)
     {
         auto bind = [&parent] (int position, bool on)
@@ -252,20 +203,99 @@ juce::String Library::toDecentSampler() const
                 bind (dsReleaseIndex[g], g == chosen);
         }
     };
+
+    // The front panel, laid out in the panel editor or in the standard way, over the background
+    // picture if there is one (writePresets copies it to Images/background.png).
+    const auto& panel = map.panel;
+    const auto colour = [] (juce::Colour c) { return c.toDisplayString (true); };
+    auto* ui = root.createNewChildElement ("ui");
+    ui->setAttribute ("width", Panel::width);
+    ui->setAttribute ("height", Panel::height);
+    ui->setAttribute ("bgColor", colour (panel.background));
+    if (map.backgroundImage.isNotEmpty())
+        ui->setAttribute ("bgImage", backgroundPath);
+    auto* tab = ui->createNewChildElement ("tab");
+    tab->setAttribute ("name", "main");
+    const auto layout = panel.layout (map.effects, articulations.size() > 1);
+    const auto place = [] (juce::XmlElement& e, const PanelControl& c)
+    {
+        e.setAttribute ("x", c.bounds.getX());
+        e.setAttribute ("y", c.bounds.getY());
+        e.setAttribute ("width", c.bounds.getWidth());
+        e.setAttribute ("height", c.bounds.getHeight());
+    };
+    bool effectsUsed = false;
+    for (const auto& c : layout)
+    {
+        if (c.isKnob())
+        {
+            struct Knob { double min, max, value; const char* type; int effect; const char* parameter; };
+            const Knob knobs[] = {
+                { 0.0, 1.0, 0.8, "amp", 0, "AMP_VOLUME" },
+                { 0.0, juce::jmax (5.0, release), release, "amp", 0, "ENV_RELEASE" },
+                { 60.0, 22000.0, 22000.0, "effect", 0, "FX_FILTER_FREQUENCY" },
+                { 0.0, 1.0, 0.0, "effect", 1, "FX_MIX" },
+                { 0.0, 1.0, 0.0, "effect", 2, "FX_WET_LEVEL" },
+                { 0.0, 1.0, 0.0, "effect", 3, "FX_REVERB_WET_LEVEL" },
+                { 0.0, 1.0, 0.7, "effect", 3, "FX_REVERB_ROOM_SIZE" },
+            };
+            const auto& knob = knobs[(int) c.kind];
+            effectsUsed = effectsUsed || c.isEffect();
+            auto* k = tab->createNewChildElement ("labeled-knob");
+            place (*k, c);
+            k->setAttribute ("label", c.label);
+            k->setAttribute ("type", "float");
+            k->setAttribute ("minValue", knob.min);
+            k->setAttribute ("maxValue", knob.max);
+            k->setAttribute ("value", knob.value);
+            k->setAttribute ("textColor", colour (panel.textColour));
+            k->setAttribute ("trackForegroundColor", colour (panel.knobColour));
+            auto* b = k->createNewChildElement ("binding");
+            b->setAttribute ("type", knob.type);
+            b->setAttribute ("level", "instrument");
+            b->setAttribute ("position", knob.effect);
+            b->setAttribute ("parameter", knob.parameter);
+        }
+        else if (c.kind == PanelControl::articulations)
+        {
+            auto* menu = tab->createNewChildElement ("menu");
+            place (*menu, c);
+            menu->setAttribute ("value", 1);
+            for (const int g : articulations)
+            {
+                auto* option = menu->createNewChildElement ("option");
+                option->setAttribute ("name", map.groups[(size_t) g].name);
+                chooseArticulation (*option, g);
+            }
+        }
+        else
+        {
+            auto* label = tab->createNewChildElement ("label");
+            place (*label, c);
+            label->setAttribute ("text", c.kind == PanelControl::title && c.label.isEmpty() ? map.libraryName : c.label);
+            label->setAttribute ("textSize", c.textSize);
+            label->setAttribute ("textColor", colour (panel.textColour));
+        }
+    }
+    if (effectsUsed)
+    {
+        // Effects on the whole instrument, all off (or open) to start. A knob finds its effect by
+        // its place in this list.
+        auto* effects = root.createNewChildElement ("effects");
+        auto effect = [effects] (const juce::String& type, std::initializer_list<std::pair<const char*, double>> values)
+        {
+            auto* e = effects->createNewChildElement ("effect");
+            e->setAttribute ("type", type);
+            for (const auto& [name, value] : values)
+                e->setAttribute (name, value);
+        };
+        effect ("lowpass", { { "frequency", 22000.0 }, { "resonance", 0.7 } });
+        effect ("chorus", { { "mix", 0.0 }, { "modDepth", 0.2 }, { "modRate", 0.2 } });
+        effect ("delay", { { "delayTime", 0.3 }, { "feedback", 0.3 }, { "stereoOffset", 0.01 }, { "wetLevel", 0.0 } });
+        effect ("reverb", { { "roomSize", 0.7 }, { "damping", 0.3 }, { "wetLevel", 0.0 } });
+    }
     if (articulations.size() > 1)
     {
-        auto* menu = tab->createNewChildElement ("menu");
-        menu->setAttribute ("x", panelWidth - 230);
-        menu->setAttribute ("y", 25);
-        menu->setAttribute ("width", 210);
-        menu->setAttribute ("height", 30);
-        menu->setAttribute ("value", 1);
-        for (const int g : articulations)
-        {
-            auto* option = menu->createNewChildElement ("option");
-            option->setAttribute ("name", map.groups[(size_t) g].name);
-            chooseArticulation (*option, g);
-        }
         juce::XmlElement* midi = nullptr;
         for (const int g : articulations)
             if (const int note = map.groups[(size_t) g].switchNote(); note >= 0)
@@ -368,7 +398,7 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
         const auto picture = juce::ImageFileFormat::loadFrom (juce::File (map.backgroundImage));
         if (! picture.isValid())
             return "Could not read the background picture " + map.backgroundImage + ".";
-        juce::Image panel (juce::Image::RGB, panelWidth, panelHeight, true);
+        juce::Image panel (juce::Image::RGB, Panel::width, Panel::height, true);
         {
             juce::Graphics g (panel);
             g.drawImage (picture, panel.getBounds().toFloat(), juce::RectanglePlacement::fillDestination);

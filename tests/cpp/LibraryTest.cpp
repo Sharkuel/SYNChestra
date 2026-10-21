@@ -332,6 +332,39 @@ int main (int argc, char* argv[])
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
 
+    // A panel laid out in the editor: its own places, names and colours, in both formats.
+    {
+        auto laidOut = library;
+        auto& panel = laidOut.map.panel;
+        panel.background = juce::Colour (0xFF102030);
+        panel.knobColour = juce::Colour (0xFFFF0000);
+        auto title = syn::Panel::standard (syn::PanelControl::title);
+        title.label = "Big Strings";
+        auto volume = syn::Panel::standard (syn::PanelControl::volume);
+        volume.label = "Level";
+        volume.bounds = { 400, 150, 120, 120 };
+        auto reverb = syn::Panel::standard (syn::PanelControl::reverb);
+        panel.controls = { title, volume, reverb };
+        const auto laidOutDs = laidOut.toDecentSampler();
+        check (laidOutDs.contains ("x=\"400\" y=\"150\" width=\"120\" height=\"120\" label=\"Level\""),
+               "a knob goes where it was put, with its new name");
+        check (laidOutDs.contains ("bgColor=\"FF102030\"") && laidOutDs.contains ("trackForegroundColor=\"FFFF0000\"")
+                   && laidOutDs.contains ("text=\"Big Strings\""),
+               "the panel's colours and title are written");
+        check (! laidOutDs.contains ("ENV_RELEASE") && laidOutDs.contains ("FX_REVERB_WET_LEVEL") && laidOutDs.contains ("<effects"),
+               "only the knobs on the panel are written, with the effects they need");
+        laidOut.map.effects = false;
+        check (! laidOut.toDecentSampler().contains ("<effects"), "unticking Effect knobs leaves their knobs out");
+        const auto laidOutSfz = laidOut.toSfz();
+        check (laidOutSfz.contains ("label_cc7=Level") && ! laidOutSfz.contains ("label_cc72") && laidOutSfz.contains ("amplitude_oncc7=100"),
+               "the .sfz names the Volume knob as on the panel");
+        const auto back = syn::SampleMap::fromValueTree (laidOut.map.toValueTree());
+        check (back.panel.controls.size() == 3 && back.panel.controls[1].bounds == volume.bounds
+                   && back.panel.controls[1].label == "Level" && back.panel.knobColour == panel.knobColour,
+               "the panel is saved with the map");
+        check (syn::SampleMap().panel.layout (true, true).size() == 9, "the standard layout has the title, 7 knobs and the menu");
+    }
+
     // A project keeps the rows, the plugin and its settings.
     {
         syn::Project project;
