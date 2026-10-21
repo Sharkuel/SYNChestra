@@ -1,4 +1,5 @@
 #include "Library.h"
+#include "Looper.h"
 #include <juce_graphics/juce_graphics.h>
 
 namespace syn
@@ -55,6 +56,8 @@ juce::String Library::toSfz() const
                 out << "<region>";
                 if (takes.size() > 1)
                     out << " seq_position=" << s->roundRobin;
+                if (s->loops())
+                    out << " loop_mode=loop_continuous loop_start=" << s->loopStart << " loop_end=" << s->loopEnd;
                 out << " sample=" << s->path << "\n";
             }
         }
@@ -184,6 +187,12 @@ juce::String Library::toDecentSampler() const
                 e->setAttribute ("hiVel", s->velocities.getEnd());
                 if (! group.pitched)
                     e->setAttribute ("pitchKeyTrack", 0);
+                if (s->loops())
+                {
+                    e->setAttribute ("loopEnabled", "true");
+                    e->setAttribute ("loopStart", s->loopStart);
+                    e->setAttribute ("loopEnd", s->loopEnd);
+                }
                 if (takes.size() > 1)
                 {
                     e->setAttribute ("seqPosition", s->roundRobin);
@@ -304,7 +313,8 @@ juce::String LibraryRecorder::safeName (const juce::String& s)
     return name.isEmpty() ? juce::String ("Untitled") : name;
 }
 
-bool LibraryRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate)
+bool LibraryRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate,
+                                const Sample* loopInfo)
 {
     file.getParentDirectory().createDirectory();
     file.deleteFile();
@@ -312,10 +322,16 @@ bool LibraryRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<
     std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     if (stream == nullptr)
         return false;
-    const auto options = juce::AudioFormatWriterOptions{}
+    auto options = juce::AudioFormatWriterOptions{}
                              .withSampleRate (sampleRate)
                              .withNumChannels (audio.getNumChannels())
                              .withBitsPerSample (24);
+    if (loopInfo != nullptr && loopInfo->loops())
+        options = options.withMetadataValues ({ { "MidiUnityNote", juce::String (loopInfo->rootNote) },
+                                                { "NumSampleLoops", "1" },
+                                                { "Loop0Type", "0" },   // forward
+                                                { "Loop0Start", juce::String (loopInfo->loopStart) },
+                                                { "Loop0End", juce::String (loopInfo->loopEnd) } });
     auto writer = wav.createWriterFor (stream, options);
     return writer != nullptr && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());
 }
@@ -330,6 +346,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
     Progress progress;
     progress.total = map.totalRecordings();
     juce::StringArray silent, failed;
+    int looped = 0;
 
     for (int g = 0; g < (int) map.groups.size(); ++g)
     {
@@ -355,7 +372,8 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     }
                     ++progress.done;
 
-                    const auto audio = renderer.render (note, velocity, group.holdSeconds, group.midiChannel);
+                    int noteOff = 0;
+                    auto audio = renderer.render (note, velocity, group.holdSeconds, group.midiChannel, &noteOff);
                     if (audio.getNumSamples() == 0)
                     {
                         silent.addIfNotAlreadyThere (group.name + " " + noteName (note));
@@ -371,7 +389,18 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     s.path = groupFolder + "/" + safeName (group.name) + "_" + noteName (note).replace ("#", "s")
                              + "_v" + juce::String (velocity).paddedLeft ('0', 3)
                              + (takes > 1 ? "_rr" + juce::String (take) : juce::String()) + ".wav";
-                    if (! writeWav (folder.getChildFile (s.path), audio, settings.sampleRate))
+                    if (group.loop && ! group.oneShot)
+                    {
+                        const auto loop = Looper::find (audio, noteOff, settings.sampleRate);
+                        if (loop.isValid())
+                        {
+                            Looper::apply (audio, loop, settings.sampleRate);
+                            s.loopStart = loop.start;
+                            s.loopEnd = loop.end - 1;
+                            ++looped;
+                        }
+                    }
+                    if (! writeWav (folder.getChildFile (s.path), audio, settings.sampleRate, &s))
                     {
                         failed.add (s.path);
                         continue;
@@ -405,7 +434,8 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
         s.roundRobins = counts[key];
     }
 
-    report = "Recorded " + juce::String ((int) library.samples.size()) + " samples.";
+    report = "Recorded " + juce::String ((int) library.samples.size()) + " samples";
+    report << (looped > 0 ? ", " + juce::String (looped) + " of them looped." : juce::String ("."));
     if (! silent.isEmpty())
         report << " Silent, so left out: " << silent.joinIntoString (", ") << ".";
     if (! failed.isEmpty())

@@ -17,6 +17,7 @@ struct Group
     double releaseSeconds = 0.3;       // the sampler's fade after key-up
     bool pitched = true;               // false: every key plays its own recording unpitched (drums)
     bool oneShot = false;              // true: a recording plays to its end, whatever the key does
+    bool loop = true;                  // loop sustained recordings, so a key can be held for as long as you like
     int midiChannel = 1;
 
     /** The notes recorded, lowest first: lowNote, every step above it, and always highNote. */

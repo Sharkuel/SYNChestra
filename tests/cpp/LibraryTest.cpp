@@ -253,6 +253,49 @@ int main (int argc, char* argv[])
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
 
+    // Looping: a held sine loops seamlessly; a pluck dies away while held, so it doesn't.
+    {
+        syn::SampleMap loopMap;
+        loopMap.libraryName = "Loops";
+        syn::Group pad;
+        pad.name = "Pad";
+        pad.lowNote = pad.highNote = 69;
+        pad.layers = 1;
+        pad.holdSeconds = 3.0;
+        auto pluckRow = pad;
+        pluckRow.name = "Pluck";
+        pluckRow.lowNote = pluckRow.highNote = 100;
+        loopMap.groups = { pad, pluckRow };
+        const auto loopFolder = folder.getSiblingFile ("Loops");
+        juce::String loopReport;
+        const auto loops = syn::LibraryRecorder::record (synth, loopMap, {}, loopFolder, nullptr, loopReport);
+        check (loops.samples.size() == 2 && loops.samples[0].loops() && ! loops.samples[1].loops(),
+               "a sustained note loops and a dying one doesn't (" + loopReport + ")");
+        if (loops.samples.size() == 2 && loops.samples[0].loops())
+        {
+            const auto& s = loops.samples[0];
+            check (s.loopStart > 48000 * 0.9 && s.loopEnd < 48000 * 3 && s.loopEnd - s.loopStart > 48000 * 0.9,
+                   "the loop sits in the held part (" + juce::String (s.loopStart) + " to " + juce::String (s.loopEnd) + ")");
+            if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (loopFolder.getChildFile (s.path)) })
+            {
+                check ((int) reader->lengthInSamples == s.loopEnd + 1, "the recording stops at the loop's end");
+                check (reader->metadataValues["Loop0Start"].getIntValue() == s.loopStart
+                           && reader->metadataValues["Loop0End"].getIntValue() == s.loopEnd,
+                       "the WAV carries the loop for other samplers");
+                juce::AudioBuffer<float> audio (2, (int) reader->lengthInSamples);
+                reader->read (&audio, 0, audio.getNumSamples(), 0, true, true);
+                // Jumping from the loop's end back to its start must be no bigger a step than
+                // the sine takes anyway (440 Hz at 48 kHz, level about 0.5: about 0.03 a sample).
+                const float jump = std::abs (audio.getSample (0, s.loopStart) - audio.getSample (0, s.loopEnd));
+                check (jump < 0.05f, "the loop is seamless (step " + juce::String (jump, 4) + ")");
+            }
+            check (loops.toSfz().contains ("loop_mode=loop_continuous loop_start=" + juce::String (s.loopStart)),
+                   "the .sfz loops it");
+            check (loops.toDecentSampler().contains ("loopEnabled=\"true\" loopStart=\"" + juce::String (s.loopStart)),
+                   "the .dspreset loops it");
+        }
+    }
+
     // Measuring: the held sine sustains and fades in about 0.2 s after key-up; the pluck dies
     // away by itself in about 3.5 s whatever the key does.
     syn::Group sine;

@@ -58,6 +58,7 @@ juce::ValueTree Group::toValueTree() const
     t.setProperty ("releaseSeconds", releaseSeconds, nullptr);
     t.setProperty ("pitched", pitched, nullptr);
     t.setProperty ("oneShot", oneShot, nullptr);
+    t.setProperty ("loop", loop, nullptr);
     t.setProperty ("midiChannel", midiChannel, nullptr);
     return t;
 }
@@ -76,6 +77,7 @@ Group Group::fromValueTree (const juce::ValueTree& t)
     g.releaseSeconds = t.getProperty ("releaseSeconds", g.releaseSeconds);
     g.pitched = t.getProperty ("pitched", g.pitched);
     g.oneShot = t.getProperty ("oneShot", g.oneShot);
+    g.loop = t.getProperty ("loop", g.loop);
     g.midiChannel = t.getProperty ("midiChannel", g.midiChannel);
     return g;
 }
@@ -96,6 +98,7 @@ Group Group::drum (const juce::String& name, int note)
     g.holdSeconds = 0.1;
     g.pitched = false;
     g.oneShot = true;
+    g.loop = false;
     g.midiChannel = 10;
     return g;
 }

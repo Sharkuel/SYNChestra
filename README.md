@@ -27,6 +27,7 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    | Release (s) | How long the sampler fades a note after you let go of the key |
    | Pitched | Off for drums and effects: every key plays its own recording, unpitched |
    | One-shot | On for drums and hits: a recording plays to its end, whatever the key does |
+   | Loop | Sustained recordings get a seamless loop, so a key can be held for as long as you like |
    | Channel | The MIDI channel the notes are sent on (10 for most drum plugins) |
 
    **Add keys** adds a keyboard range (a recording every 3 keys from C2 to C7 by default).
@@ -37,11 +38,16 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    - a note that keeps ringing after key-up (a drum, a pluck, a bell) becomes a one-shot, so each
      recording keeps its whole ring;
    - a note that dies away while held (a piano, a guitar) gets a Hold long enough to die away;
-   - a note that sustains (a pad, an organ, strings) gets a 4 s Hold. Raise it if you'll hold
-     notes longer, since a sampler can't play past the end of a recording.
+   - a note that sustains (a pad, an organ, strings) gets a 4 s Hold and Loop.
 
-   Release is set to how long the note takes to fade after key-up. Recordings always keep the
-   whole tail after the hold, whatever these are set to.
+   Release is set to how long the note takes to fade after key-up.
+
+   With **Loop** on, SYNChestra looks for a loop in the held part of each recording (after the
+   attack, before key-up), picks the start whose sound best matches the end, and blends the two so
+   the jump back can't be heard. The recording then stops at the loop's end; the sampler's Release
+   fades it out after key-up. Notes that die away while held, and holds under a second, aren't
+   looped. The loop is written to the .sfz, the .dspreset and the WAV file itself. Recordings
+   that aren't looped always keep the whole tail after the hold.
 
    The keyboard at the bottom plays the plugin on the selected row's channel, and shades that
    row's keys. **Find notes** plays every key once on that channel and marks the ones that make
