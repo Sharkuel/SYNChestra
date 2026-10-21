@@ -25,7 +25,8 @@ target_sources(SYNChestra PRIVATE
     Source/Core/NoteRenderer.cpp
     Source/Core/Library.cpp
     Source/Core/Looper.cpp
-    Source/Core/Project.cpp)
+    Source/Core/Project.cpp
+    Source/Core/LibraryPlayer.cpp)
 
 target_compile_definitions(SYNChestra PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -62,7 +63,8 @@ target_sources(SYNChestra_tests PRIVATE
     Source/Core/NoteRenderer.cpp
     Source/Core/Library.cpp
     Source/Core/Looper.cpp
-    Source/Core/Project.cpp)
+    Source/Core/Project.cpp
+    Source/Core/LibraryPlayer.cpp)
 target_compile_definitions(SYNChestra_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(SYNChestra_tests PRIVATE
     juce::juce_audio_processors

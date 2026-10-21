@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "../Core/LibraryPlayer.h"
 #include <atomic>
 #include <bitset>
 
@@ -49,6 +50,22 @@ public:
 
     juce::AudioPluginInstance* getProcessor() const { return processor; }
 
+    /** Which of the plugin's outputs is heard: the first channel of a stereo pair, 0 the main one. */
+    void setOutputChannel (int first) { outputChannel = juce::jmax (0, first); }
+
+    /** While set, MIDI plays this recorded library instead of the plugin. nullptr goes back to
+        the plugin. Once this returns, the audio thread no longer touches the old one. */
+    void setPreview (syn::LibraryPlayer* p)
+    {
+        const juce::ScopedLock sl (lock);
+        if (preview != nullptr)
+            preview->allNotesOff();
+        preview = p;
+    }
+
+    /** The sound card's rate, which a preview plays at. */
+    double getSampleRate() const { return deviceRate; }
+
     /** Plays a message as if it came from a MIDI input. */
     void play (const juce::MidiMessage& m)
     {
@@ -66,7 +83,9 @@ public:
     {
         const juce::ScopedLock sl (lock);
         device = d;
-        collector.reset (d->getCurrentSampleRate());
+        deviceRate = d->getCurrentSampleRate();
+        collector.reset (deviceRate);
+        previewBuffer.setSize (2, juce::jmax (d->getCurrentBufferSizeSamples(), 4096));
         if (processor != nullptr)
             prepare (*processor);
     }
@@ -88,7 +107,21 @@ public:
         collector.removeNextBlockOfMessages (midi, numSamples);
 
         const juce::ScopedTryLock sl (lock);
-        if (! sl.isLocked() || processor == nullptr || numSamples > buffer.getNumSamples())
+        if (! sl.isLocked())
+            return;
+        if (preview != nullptr)
+        {
+            if (numSamples > previewBuffer.getNumSamples())
+                return;
+            juce::AudioBuffer<float> block (previewBuffer.getArrayOfWritePointers(), 2, numSamples);
+            block.clear();
+            preview->render (block, midi);
+            for (int c = 0; c < numOutputs; ++c)
+                if (outputs[c] != nullptr)
+                    juce::FloatVectorOperations::copy (outputs[c], block.getReadPointer (juce::jmin (c, 1)), numSamples);
+            return;
+        }
+        if (processor == nullptr || numSamples > buffer.getNumSamples())
             return;
         // A plugin can add outputs while it runs (some do when their window opens or a kit loads).
         // Until it's prepared again for them, give it nothing to fill.
@@ -126,10 +159,16 @@ public:
         const int outs = processor->getMainBusNumOutputChannels();
         if (listening && outs > 0)
             listen (block, outs, numSamples, sentIn.any());
+        // The chosen pair of a multi-out plugin's outputs, or the main one (a mono one on both sides).
+        const int first = outputChannel;
+        const int total = processor->getTotalNumOutputChannels();
         for (int c = 0; c < numOutputs; ++c)
             if (outputs[c] != nullptr && outs > 0)
-                juce::FloatVectorOperations::copy (outputs[c], block.getReadPointer (juce::jmin (c, outs - 1)),
-                                                   numSamples);
+            {
+                const int from = first > 0 && first < total ? juce::jmin (first + juce::jmin (c, 1), total - 1)
+                                                             : juce::jmin (c, outs - 1);
+                juce::FloatVectorOperations::copy (outputs[c], block.getReadPointer (from), numSamples);
+            }
     }
 
 private:
@@ -233,6 +272,10 @@ private:
 
     juce::CriticalSection lock;
     juce::AudioPluginInstance* processor = nullptr;
+    syn::LibraryPlayer* preview = nullptr;
+    juce::AudioBuffer<float> previewBuffer;
+    std::atomic<int> outputChannel { 0 };
+    std::atomic<double> deviceRate { 44100.0 };
     juce::AudioIODevice* device = nullptr;
     juce::MidiMessageCollector collector;
     juce::AudioBuffer<float> buffer;

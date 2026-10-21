@@ -191,6 +191,7 @@ juce::ValueTree SampleMap::toValueTree() const
     t.setProperty ("effects", effects, nullptr);
     t.setProperty ("skipSameLayers", skipSameLayers, nullptr);
     t.setProperty ("backgroundImage", backgroundImage, nullptr);
+    t.setProperty ("outputChannel", outputChannel, nullptr);
     for (const auto& g : groups)
         t.appendChild (g.toValueTree(), nullptr);
     return t;
@@ -203,6 +204,7 @@ SampleMap SampleMap::fromValueTree (const juce::ValueTree& t)
     m.effects = t.getProperty ("effects", m.effects);
     m.skipSameLayers = t.getProperty ("skipSameLayers", m.skipSameLayers);
     m.backgroundImage = t.getProperty ("backgroundImage", m.backgroundImage);
+    m.outputChannel = t.getProperty ("outputChannel", m.outputChannel);
     for (const auto& child : t)
         if (child.hasType ("Group"))
             m.groups.push_back (Group::fromValueTree (child));
