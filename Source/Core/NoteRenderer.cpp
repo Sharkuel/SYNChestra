@@ -62,7 +62,8 @@ void NoteRenderer::addMainOutput (juce::AudioBuffer<float>& dest, int destStart,
         dest.copyFrom (ch, destStart, src, juce::jmin (ch, outs - 1), 0, n);
 }
 
-juce::AudioBuffer<float> NoteRenderer::render (int note, int velocity, double holdSeconds, int midiChannel)
+juce::AudioBuffer<float> NoteRenderer::render (int note, int velocity, double holdSeconds, int midiChannel,
+                                               int* noteOffSample)
 {
     midiChannel = juce::jlimit (1, 16, midiChannel);
     waitForSilence (midiChannel);
@@ -125,6 +126,8 @@ juce::AudioBuffer<float> NoteRenderer::render (int note, int velocity, double ho
     // Keep a few samples before the first sound, so the attack isn't shaved.
     firstSound = juce::jmax (0, firstSound - 32);
     const int length = lastSound - firstSound + 1;
+    if (noteOffSample != nullptr)
+        *noteOffSample = noteOffAt - firstSound;
     juce::AudioBuffer<float> out (2, length);
     for (int ch = 0; ch < 2; ++ch)
         out.copyFrom (ch, 0, recorded, ch, firstSound, length);

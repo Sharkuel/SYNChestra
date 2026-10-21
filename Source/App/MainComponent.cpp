@@ -166,11 +166,13 @@ MainComponent::MainComponent()
     header.addColumn ("Release (s)", colRelease, 80);
     header.addColumn ("Pitched", colPitched, 60);
     header.addColumn ("One-shot", colOneShot, 66);
+    header.addColumn ("Loop", colLoop, 46);
     header.addColumn ("Channel", colChannel, 64);
     header.addColumn ("Recordings", colCount, 80);
     table.setRowHeight (26);
     table.setTooltip ("Lowest and Highest take note numbers or names (C4 is 60). Every: a recording every this many "
-                      "keys. Layers: velocity layers. Hold: how long each note is held before its release.");
+                      "keys. Layers: velocity layers. Hold: how long each note is held before its release. Loop: "
+                      "sustained recordings get a seamless loop, so a key can be held for as long as you like.");
 
     decentSampler.setToggleState (settings->getBoolValue ("writeDecentSampler", true), juce::dontSendNotification);
     sfz.setToggleState (settings->getBoolValue ("writeSfz", true), juce::dontSendNotification);
@@ -193,7 +195,7 @@ MainComponent::MainComponent()
     listenButton.setTooltip ("Plays the selected row's middle note, held as it will be recorded.");
     measureButton.onClick = [this] { measureGroup(); };
     measureButton.setTooltip ("Plays the selected row's lowest note to hear how long it rings, then sets Hold, "
-                              "Release and One-shot to suit it.");
+                              "Release, One-shot and Loop to suit it.");
     recordButton.onClick = [this] { recordLibrary(); };
     recordButton.setTooltip ("Records every ticked row into Samples, then writes the library's presets.");
     status.setJustificationType (juce::Justification::topLeft);
@@ -550,6 +552,7 @@ void MainComponent::measureGroup()
             return setStatus (g.name + "'s lowest note plays nothing on channel " + juce::String (g.midiChannel) + ".");
         g.holdSeconds = t.hold;
         g.oneShot = t.oneShot;
+        g.loop = t.sustains;
         if (! t.oneShot)
             g.releaseSeconds = t.release;
         saveMap();
@@ -560,7 +563,7 @@ void MainComponent::measureGroup()
                        "a one-shot with Hold " + seconds (t.hold) + ". Each recording keeps its whole ring.");
         else if (t.sustains)
             setStatus (g.name + " sustains while held and fades in " + seconds (t.release) + " after key-up: Hold "
-                       + seconds (t.hold) + ", Release " + seconds (t.release) + ". Raise Hold for longer held notes.");
+                       + seconds (t.hold) + ", Release " + seconds (t.release) + ", looped so a key can be held as long as you like.");
         else
             setStatus (g.name + " dies away in " + seconds (t.ringSeconds) + " while held and fades in " + seconds (t.release)
                        + " after key-up: Hold " + seconds (t.hold) + ", Release " + seconds (t.release) + ".");
@@ -982,7 +985,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
     }
     const auto& g = map.groups[(size_t) row];
 
-    if (column == colOn || column == colPitched || column == colOneShot)
+    if (column == colOn || column == colPitched || column == colOneShot || column == colLoop)
     {
         auto* cell = dynamic_cast<ToggleCell*> (existing);
         if (cell == nullptr)
@@ -990,7 +993,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
             delete existing;
             cell = new ToggleCell();
         }
-        const bool on = column == colOn ? g.enabled : column == colPitched ? g.pitched : g.oneShot;
+        const bool on = column == colOn ? g.enabled : column == colPitched ? g.pitched : column == colLoop ? g.loop : g.oneShot;
         cell->box.setToggleState (on, juce::dontSendNotification);
         cell->box.onClick = [this, row, column, cell]
         {
@@ -999,6 +1002,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
             if (column == colOn) group.enabled = state;
             if (column == colPitched) group.pitched = state;
             if (column == colOneShot) group.oneShot = state;
+            if (column == colLoop) group.loop = state;
             saveMap();
             refreshTable();
         };

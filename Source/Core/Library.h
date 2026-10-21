@@ -15,6 +15,8 @@ struct Sample
     juce::Range<int> velocities;
     int roundRobin = 1;         // 1-based take number
     int roundRobins = 1;        // takes for this note and layer
+    int loopStart = -1, loopEnd = -1;   // inclusive sample frames, when the recording loops
+    bool loops() const { return loopStart >= 0 && loopEnd > loopStart; }
 };
 
 /** A recorded library: the map it came from and its samples. */
@@ -69,6 +71,9 @@ public:
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 
-    static bool writeWav (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate);
+    /** A 24-bit WAV. With a loop, it also carries a sampler chunk with the loop and root note,
+        which most samplers read on their own. */
+    static bool writeWav (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate,
+                          const Sample* loopInfo = nullptr);
 };
 } // namespace syn

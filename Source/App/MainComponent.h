@@ -19,7 +19,7 @@ public:
 
 private:
     enum Column { colOn = 1, colName, colLow, colHigh, colStep, colLayers, colRoundRobins, colHold, colRelease,
-                  colPitched, colOneShot, colChannel, colCount };
+                  colPitched, colOneShot, colLoop, colChannel, colCount };
 
     void scanPlugins();
     void refreshPluginChoices();

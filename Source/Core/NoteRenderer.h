@@ -24,8 +24,10 @@ public:
     ~NoteRenderer();
 
     /** Plays one note held for holdSeconds and returns it in stereo from its first sound to the
-        end of its tail. Empty when the note makes no sound. */
-    juce::AudioBuffer<float> render (int note, int velocity, double holdSeconds, int midiChannel = 1);
+        end of its tail. Empty when the note makes no sound. noteOffSample, if given, gets where
+        in the result the key came up. */
+    juce::AudioBuffer<float> render (int note, int velocity, double holdSeconds, int midiChannel = 1,
+                                     int* noteOffSample = nullptr);
 
     const Settings& getSettings() const { return settings; }
 
