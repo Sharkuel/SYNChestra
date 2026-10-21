@@ -1,5 +1,7 @@
 # SYNChestra
 
+![SYNChestra](assets/logo-github.jpg)
+
 Record your instrument plugins into sample libraries. SYNChestra hosts a VST3 (or AU/LV2)
 instrument, plays it note by note at several velocities, and saves the result as a
 **Decent Sampler** (`.dspreset`) and **SFZ** (`.sfz`) library: one set of recordings, two

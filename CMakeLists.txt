@@ -17,6 +17,9 @@ juce_add_gui_app(SYNChestra
     PRODUCT_NAME "SYNChestra"
     COMPANY_NAME "SYNChestra")
 
+# The logo shown at the top of the main window (assets/logo-github.jpg, with its white frame, is the README's).
+juce_add_binary_data(SYNChestra_assets SOURCES assets/logo.png)
+
 target_sources(SYNChestra PRIVATE
     Source/App/Main.cpp
     Source/App/MainComponent.cpp
@@ -40,6 +43,7 @@ target_compile_definitions(SYNChestra PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SYNChestra,JUCE_VERSION>")
 
 target_link_libraries(SYNChestra PRIVATE
+    SYNChestra_assets
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_recommended_config_flags

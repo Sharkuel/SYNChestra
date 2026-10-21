@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "../Core/Library.h"
 #include "PluginScanner.h"
+#include <BinaryData.h>
 
 namespace
 {
@@ -242,11 +243,12 @@ MainComponent::MainComponent()
     projectButton.setTooltip ("Save the rows, the plugin and the sound picked in it as a .synchestra project, "
                               "or open one to record a library again. Recording saves one next to the library.");
     showMap();
+    logo = juce::ImageCache::getFromMemory (BinaryData::logo_png, BinaryData::logo_pngSize);
 
     refreshPluginChoices();
     setStatus (knownPlugins.getNumTypes() == 0 ? "Find your instrument plugins to start."
                                                : "Pick a plugin and load it.");
-    setSize (1100, 740);
+    setSize (1160, 760);
 }
 
 MainComponent::~MainComponent()
@@ -261,12 +263,24 @@ MainComponent::~MainComponent()
     plugin = nullptr;
 }
 
+void MainComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    if (logo.isValid())
+        g.drawImageWithin (logo, logoArea.getX(), logoArea.getY(), logoArea.getWidth(), logoArea.getHeight(),
+                           juce::RectanglePlacement::centred);
+}
+
 void MainComponent::resized()
 {
     auto area = getLocalBounds().reduced (10);
     const int rowHeight = 28, gap = 8;
 
-    auto row = area.removeFromTop (rowHeight);
+    // The logo beside the top two rows: the plugin, then the library.
+    auto top = area.removeFromTop (rowHeight * 2 + gap);
+    logoArea = top.removeFromLeft (juce::roundToInt (top.getHeight() * 912.0 / 412.0));
+    top.removeFromLeft (gap * 2);
+    auto row = top.removeFromTop (rowHeight);
     scanButton.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (gap);
     pluginSearch.setBounds (row.removeFromLeft (160));
@@ -278,9 +292,9 @@ void MainComponent::resized()
     loadButton.setBounds (row.removeFromRight (110));
     row.removeFromRight (gap);
     pluginChoice.setBounds (row);
-    area.removeFromTop (gap);
+    top.removeFromTop (gap);
 
-    row = area.removeFromTop (rowHeight);
+    row = top;
     nameLabel.setBounds (row.removeFromLeft (100));
     libraryName.setBounds (row.removeFromLeft (260));
     row.removeFromLeft (gap);

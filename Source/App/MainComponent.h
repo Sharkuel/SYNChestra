@@ -20,6 +20,7 @@ public:
     ~MainComponent() override;
 
     void resized() override;
+    void paint (juce::Graphics&) override;
 
 private:
     enum Column { colOn = 1, colName, colLow, colHigh, colStep, colLayers, colRoundRobins, colHold, colRelease,
@@ -110,6 +111,8 @@ private:
     juce::File lastLibraryFolder;
     std::unique_ptr<syn::LibraryPlayer> player;
     int newRowStart = -1;   // first key of a key row being drawn on the keyboard
+    juce::Image logo;
+    juce::Rectangle<int> logoArea;   // beside the top two rows
     juce::Label status;
     juce::TooltipWindow tooltips { this };
 
