@@ -1,6 +1,7 @@
 // Records a small library from a stand-in synth plugin and checks the samples and both presets,
 // so the recorder can be checked without a commercial plugin. Usage: SYNChestra_tests OUTPUT_FOLDER
 #include "../../Source/Core/Library.h"
+#include "../../Source/Core/Project.h"
 #include <juce_graphics/juce_graphics.h>
 
 namespace
@@ -29,7 +30,7 @@ public:
     void setCurrentProgram (int) override {}
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
-    void getStateInformation (juce::MemoryBlock&) override {}
+    void getStateInformation (juce::MemoryBlock& state) override { state.replaceAll ("patch 7", 7); }
     void setStateInformation (const void*, int) override {}
 
     using AudioPluginInstance::processBlock;
@@ -261,6 +262,27 @@ int main (int argc, char* argv[])
     plain.map.effects = false;
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
+
+    // A project keeps the rows, the plugin and its settings.
+    {
+        syn::Project project;
+        project.map = map;
+        juce::PluginDescription description;
+        synth.fillInPluginDescription (description);
+        description.fileOrIdentifier = "/plugins/Fake Synth.vst3";
+        description.pluginFormatName = "VST3";
+        project.plugin = description;
+        synth.getStateInformation (project.pluginState);
+        const auto file = folder.getSiblingFile (juce::String ("Test") + syn::Project::fileExtension);
+        check (project.save (file), "a project is saved");
+        const auto back = syn::Project::load (file);
+        check (back.has_value() && back->map.libraryName == "Test Synth" && back->map.groups.size() == map.groups.size()
+                   && back->plugin.has_value() && back->plugin->name == "Fake Synth"
+                   && back->plugin->fileOrIdentifier == "/plugins/Fake Synth.vst3"
+                   && back->pluginState == project.pluginState,
+               "a project opens with its rows, plugin and the plugin's settings");
+        check (! syn::Project::load (folder.getChildFile ("Test Synth.sfz")).has_value(), "other files aren't projects");
+    }
 
     // Same-sounding layers: 127, 95 and 64 are one sound at three levels, 32 is brighter.
     {

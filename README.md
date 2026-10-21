@@ -86,6 +86,11 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    `Images/background.png`, scaled and cropped to the panel's 812 x 375 pixels. SFZ has no
    standard panel, so these only apply to the .dspreset.
 
+**Projects.** **Project... > Save project** writes a `.synchestra` file with the rows, the
+plugin and the plugin's own settings (the patch or kit picked in it). **Open project** brings
+them all back, loads the plugin with that sound and opens its window, ready to record again or
+add rows. Recording a library also saves its project next to it.
+
 The library is saved in the **Save to** folder (Documents/SYNChestra by default):
 
 ```

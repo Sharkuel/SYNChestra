@@ -104,7 +104,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz,
                                 (juce::Component*) &effectKnobs, (juce::Component*) &backgroundButton,
-                                (juce::Component*) &skipSameLayers,
+                                (juce::Component*) &skipSameLayers, (juce::Component*) &projectButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
@@ -198,8 +198,6 @@ MainComponent::MainComponent()
         map = syn::SampleMap::fromValueTree (juce::ValueTree::fromXml (*xml));
     else
         map.groups.push_back (syn::Group::keys());
-    libraryName.setText (map.libraryName, juce::dontSendNotification);
-    effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
     effectKnobs.onClick = [this]
     {
         map.effects = effectKnobs.getToggleState();
@@ -207,7 +205,6 @@ MainComponent::MainComponent()
     };
     effectKnobs.setTooltip ("Adds Tone, Chorus, Delay, Reverb and Room knobs to the Decent Sampler panel. "
                             "They start off, so the library sounds as recorded.");
-    skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
     skipSameLayers.onClick = [this]
     {
         map.skipSameLayers = skipSameLayers.getToggleState();
@@ -217,8 +214,10 @@ MainComponent::MainComponent()
                                "The louder recording covers its velocities and the sampler turns it down, which "
                                "saves disk space and the rest of that layer's takes.");
     backgroundButton.onClick = [this] { chooseBackground(); };
-    showBackground();
-    refreshTable();
+    projectButton.onClick = [this] { showProjectMenu(); };
+    projectButton.setTooltip ("Save the rows, the plugin and the sound picked in it as a .synchestra project, "
+                              "or open one to record a library again. Recording saves one next to the library.");
+    showMap();
 
     refreshPluginChoices();
     setStatus (knownPlugins.getNumTypes() == 0 ? "Find your instrument plugins to start."
@@ -257,6 +256,8 @@ void MainComponent::resized()
     row = area.removeFromTop (rowHeight);
     nameLabel.setBounds (row.removeFromLeft (100));
     libraryName.setBounds (row.removeFromLeft (260));
+    row.removeFromLeft (gap);
+    projectButton.setBounds (row.removeFromLeft (90));
     row.removeFromLeft (gap);
     removeButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap);
@@ -406,19 +407,112 @@ void MainComponent::loadSelectedPlugin()
     if (chosen.isEmpty() || ! found)
         return setStatus ("Pick a plugin first.");
     settings->setValue ("lastPlugin", chosen);
+    if (loadPlugin (desc))
+        setStatus ("Loaded " + plugin->getName() + ". Pick a sound in its window, set the rows below, then Listen "
+                   "to check a row and Record library.");
+}
 
+bool MainComponent::loadPlugin (const juce::PluginDescription& desc)
+{
     setLive (false);
     pluginWindow = nullptr;
     plugin = nullptr;
     juce::String error;
     plugin = formats.createPluginInstance (desc, sampleRate(), blockSize, error);
     if (plugin == nullptr)
-        return setStatus ("Could not load the plugin: " + error);
+    {
+        setStatus ("Could not load " + desc.name + ": " + error);
+        return false;
+    }
     plugin->prepareToPlay (sampleRate(), blockSize);
     showPluginWindow();
     setLive (true);
-    setStatus ("Loaded " + plugin->getName() + ". Pick a sound in its window, set the rows below, then Listen "
-               "to check a row and Record library.");
+    return true;
+}
+
+// --- projects --------------------------------------------------------------------------------
+
+void MainComponent::showMap()
+{
+    libraryName.setText (map.libraryName, juce::dontSendNotification);
+    effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
+    skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
+    showBackground();
+    refreshTable();
+}
+
+syn::Project MainComponent::currentProject() const
+{
+    syn::Project project;
+    project.map = map;
+    if (plugin != nullptr)
+    {
+        project.plugin = plugin->getPluginDescription();
+        plugin->getStateInformation (project.pluginState);
+    }
+    return project;
+}
+
+void MainComponent::showProjectMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem ("Open project...", [this] { openProject(); });
+    menu.addItem ("Save project...", [this] { saveProject(); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (projectButton));
+}
+
+void MainComponent::saveProject()
+{
+    const auto suggested = outputFolder().getChildFile (syn::LibraryRecorder::safeName (map.libraryName)
+                                                        + syn::Project::fileExtension);
+    chooser = std::make_unique<juce::FileChooser> ("Save the project", suggested, juce::String ("*") + syn::Project::fileExtension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+    {
+        auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        file = file.withFileExtension (syn::Project::fileExtension);
+        setStatus (currentProject().save (file) ? "Saved " + file.getFullPathName() + "."
+                                                : "Could not save " + file.getFullPathName() + ".");
+    });
+}
+
+void MainComponent::openProject()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Open a project", outputFolder(), juce::String ("*") + syn::Project::fileExtension);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        if (const auto project = syn::Project::load (file))
+            useProject (*project, file.getFileName());
+        else
+            setStatus (file.getFileName() + " isn't a SYNChestra project.");
+    });
+}
+
+void MainComponent::useProject (const syn::Project& project, const juce::String& name)
+{
+    map = project.map;
+    if (map.groups.empty())
+        map.groups.push_back (syn::Group::keys());
+    saveMap();
+    showMap();
+    if (! project.plugin.has_value())
+        return setStatus ("Opened " + name + ". It has no plugin saved: load one to record.");
+    if (! loadPlugin (*project.plugin))
+        return;   // loadPlugin said why
+    if (project.pluginState.getSize() > 0)
+    {
+        const juce::ScopedLock lock (plugin->getCallbackLock());
+        plugin->setStateInformation (project.pluginState.getData(), (int) project.pluginState.getSize());
+    }
+    pluginChoice.setText (pluginLabel (*project.plugin), juce::dontSendNotification);
+    setStatus ("Opened " + name + " with " + plugin->getName() + " and its saved sound, ready to record again.");
 }
 
 void MainComponent::showPluginWindow()
@@ -718,6 +812,10 @@ void MainComponent::recordLibrary()
     },
     [this, folder] (const juce::String& report)
     {
+        // The project goes next to the library, so it can be recorded again or extended later.
+        if (folder.isDirectory())
+            currentProject().save (folder.getChildFile (syn::LibraryRecorder::safeName (map.libraryName)
+                                                        + syn::Project::fileExtension));
         setStatus (report);
         if (folder.isDirectory())
             folder.revealToUser();
