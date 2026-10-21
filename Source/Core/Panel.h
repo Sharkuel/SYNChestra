@@ -9,6 +9,8 @@ struct PanelControl
 {
     enum Kind { volume, release, tone, chorus, delay, reverb, room, title, text, articulations };
     Kind kind = volume;
+    enum Style { knob, verticalFader, horizontalFader };
+    Style style = knob;   // how a knob kind is drawn
     juce::String label;   // a knob's name, or a text's words; the title shows the library name when empty
     juce::Rectangle<int> bounds;
     int textSize = 16;    // titles and texts
@@ -16,6 +18,11 @@ struct PanelControl
     bool isKnob() const { return kind <= room; }
     bool isEffect() const { return kind >= tone && kind <= room; }
     static juce::String nameOf (Kind);   // "Volume", "Title"...
+    static juce::String nameOf (Style);  // "Knob", "Vertical fader", "Horizontal fader"
+    /** Decent Sampler's style attribute for it, or empty for its usual knob. */
+    juce::String decentSamplerStyle() const;
+    /** Turns a knob into a fader or back, at its usual size for that style, where it was. */
+    void setStyle (Style);
 
     juce::ValueTree toValueTree() const;
     static PanelControl fromValueTree (const juce::ValueTree&);

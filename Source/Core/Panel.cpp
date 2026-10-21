@@ -9,11 +9,35 @@ juce::String PanelControl::nameOf (Kind kind)
     return names[(int) kind];
 }
 
+juce::String PanelControl::nameOf (Style style)
+{
+    static const char* names[] = { "Knob", "Vertical fader", "Horizontal fader" };
+    return names[(int) style];
+}
+
+juce::String PanelControl::decentSamplerStyle() const
+{
+    if (! isKnob())
+        return {};
+    return style == verticalFader ? "linear_vertical" : style == horizontalFader ? "linear_horizontal" : juce::String();
+}
+
+void PanelControl::setStyle (Style newStyle)
+{
+    style = newStyle;
+    const auto centre = bounds.getCentre();
+    // Room for the label above the track, as Decent Sampler draws it.
+    bounds.setSize (style == verticalFader ? 60 : style == horizontalFader ? 200 : 90,
+                    style == verticalFader ? 180 : style == horizontalFader ? 60 : 90);
+    bounds.setCentre (centre);
+}
+
 juce::ValueTree PanelControl::toValueTree() const
 {
     juce::ValueTree t ("Control");
     t.setProperty ("kind", nameOf (kind), nullptr);
     t.setProperty ("label", label, nullptr);
+    t.setProperty ("style", nameOf (style), nullptr);
     t.setProperty ("bounds", bounds.toString(), nullptr);
     t.setProperty ("textSize", textSize, nullptr);
     return t;
@@ -27,6 +51,10 @@ PanelControl PanelControl::fromValueTree (const juce::ValueTree& t)
         if (nameOf ((Kind) k) == kind)
             c.kind = (Kind) k;
     c.label = t.getProperty ("label", c.label);
+    const auto style = t.getProperty ("style").toString();
+    for (int st = knob; st <= horizontalFader; ++st)
+        if (nameOf ((Style) st) == style)
+            c.style = (Style) st;
     c.bounds = juce::Rectangle<int>::fromString (t.getProperty ("bounds").toString());
     c.textSize = t.getProperty ("textSize", c.textSize);
     return c;

@@ -98,7 +98,8 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    resize it, right-click to remove it, and **Add...** puts back a knob or adds a line of text.
    **Colours...** sets the background, text and knob colours, and **Background...** picks a
    picture, copied to `Images/background.png` and scaled and cropped to fill the panel.
-   **Standard layout** puts everything back. SFZ has no standard panel: the .sfz gets the
+   **Style** turns a knob into a vertical or horizontal fader; drag a fader's far end to
+   lengthen it. **Standard layout** puts everything back. SFZ has no standard panel: the .sfz gets the
    Volume and Release knobs (CC7 and CC72) under the names given in the editor, which SFZ
    players list.
 

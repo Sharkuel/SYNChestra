@@ -344,6 +344,7 @@ int main (int argc, char* argv[])
         volume.label = "Level";
         volume.bounds = { 400, 150, 120, 120 };
         auto reverb = syn::Panel::standard (syn::PanelControl::reverb);
+        reverb.setStyle (syn::PanelControl::verticalFader);
         panel.controls = { title, volume, reverb };
         const auto laidOutDs = laidOut.toDecentSampler();
         check (laidOutDs.contains ("x=\"400\" y=\"150\" width=\"120\" height=\"120\" label=\"Level\""),
@@ -353,6 +354,8 @@ int main (int argc, char* argv[])
                "the panel's colours and title are written");
         check (! laidOutDs.contains ("ENV_RELEASE") && laidOutDs.contains ("FX_REVERB_WET_LEVEL") && laidOutDs.contains ("<effects"),
                "only the knobs on the panel are written, with the effects they need");
+        check (laidOutDs.contains ("label=\"Reverb\" style=\"linear_vertical\"") && countOf (laidOutDs, "style=") == 1,
+               "a fader is written as one, and knobs stay knobs");
         laidOut.map.effects = false;
         check (! laidOut.toDecentSampler().contains ("<effects"), "unticking Effect knobs leaves their knobs out");
         const auto laidOutSfz = laidOut.toSfz();
@@ -360,7 +363,8 @@ int main (int argc, char* argv[])
                "the .sfz names the Volume knob as on the panel");
         const auto back = syn::SampleMap::fromValueTree (laidOut.map.toValueTree());
         check (back.panel.controls.size() == 3 && back.panel.controls[1].bounds == volume.bounds
-                   && back.panel.controls[1].label == "Level" && back.panel.knobColour == panel.knobColour,
+                   && back.panel.controls[1].label == "Level" && back.panel.knobColour == panel.knobColour
+                   && back.panel.controls[2].style == syn::PanelControl::verticalFader,
                "the panel is saved with the map");
         check (syn::SampleMap().panel.layout (true, true).size() == 9, "the standard layout has the title, 7 knobs and the menu");
     }

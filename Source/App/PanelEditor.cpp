@@ -9,7 +9,28 @@ void drawControl (juce::Graphics& g, const syn::PanelControl& c, const syn::Pane
                   const juce::String& libraryName, const juce::String& firstArticulation)
 {
     const auto r = c.bounds.toFloat();
-    if (c.isKnob())
+    if (c.isKnob() && c.style != syn::PanelControl::knob)
+    {
+        // A fader: its name on top, then the track, filled up to its value, and a thumb.
+        const float labelHeight = 18.0f;
+        g.setColour (panel.textColour);
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawFittedText (c.label, r.withHeight (labelHeight).toNearestInt(), juce::Justification::centred, 1);
+        const auto area = r.withTrimmedTop (labelHeight).reduced (8.0f);
+        const bool vertical = c.style == syn::PanelControl::verticalFader;
+        const auto track = vertical ? area.withSizeKeepingCentre (6.0f, area.getHeight())
+                                    : area.withSizeKeepingCentre (area.getWidth(), 6.0f);
+        g.setColour (juce::Colours::grey.withAlpha (0.6f));
+        g.fillRoundedRectangle (track, 3.0f);
+        const auto filled = vertical ? track.withTrimmedTop (track.getHeight() * 0.3f) : track.withWidth (track.getWidth() * 0.7f);
+        g.setColour (panel.knobColour);
+        g.fillRoundedRectangle (filled, 3.0f);
+        const auto thumbAt = vertical ? juce::Point<float> (track.getCentreX(), filled.getY())
+                                      : juce::Point<float> (filled.getRight(), track.getCentreY());
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (thumbAt));
+    }
+    else if (c.isKnob())
     {
         const float labelHeight = 18.0f;
         const auto dial = r.withTrimmedBottom (labelHeight).reduced (6.0f);
@@ -105,7 +126,14 @@ public:
             menu.showMenuAsync ({});
             return;
         }
-        dragStart = list[(size_t) hit].bounds.getPosition();
+        // A fader's far end resizes it; anywhere else moves it.
+        const auto& c = list[(size_t) hit];
+        const auto b = c.bounds;
+        resizing = c.isKnob()
+                   && ((c.style == syn::PanelControl::verticalFader && e.y > b.getBottom() - 8)
+                       || (c.style == syn::PanelControl::horizontalFader && e.x > b.getRight() - 8));
+        startBounds = b;
+        dragStart = b.getPosition();
         dragging = true;
     }
 
@@ -114,6 +142,20 @@ public:
         if (! dragging || editor.selected < 0 || e.getDistanceFromDragStart() < 2)
             return;
         auto& c = editor.controls()[(size_t) editor.selected];
+        if (resizing)
+        {
+            const auto snap = [] (int v) { return juce::roundToInt (v / (float) grid) * grid; };
+            if (c.style == syn::PanelControl::verticalFader)
+                c.bounds.setHeight (juce::jlimit (80, syn::Panel::height - c.bounds.getY(),
+                                                  snap (startBounds.getHeight() + e.getDistanceFromDragStartY())));
+            else
+                c.bounds.setWidth (juce::jlimit (100, syn::Panel::width - c.bounds.getX(),
+                                                 snap (startBounds.getWidth() + e.getDistanceFromDragStartX())));
+            moved = true;
+            editor.showSelection();
+            repaint();
+            return;
+        }
         auto at = dragStart + e.getOffsetFromDragStart();
         at = { juce::roundToInt (at.x / (float) grid) * grid, juce::roundToInt (at.y / (float) grid) * grid };
         c.bounds.setPosition (juce::jlimit (0, syn::Panel::width - c.bounds.getWidth(), at.x),
@@ -126,13 +168,30 @@ public:
     {
         if (moved)
             editor.changed();
-        dragging = moved = false;
+        dragging = moved = resizing = false;
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        // The resize cursor over a fader's far end.
+        const auto& list = editor.map.panel.controls.empty() ? editor.shown : editor.map.panel.controls;
+        auto shape = juce::MouseCursor::NormalCursor;
+        for (const auto& c : list)
+            if (editor.visible (c) && c.isKnob() && c.bounds.contains (e.getPosition()))
+            {
+                if (c.style == syn::PanelControl::verticalFader && e.y > c.bounds.getBottom() - 8)
+                    shape = juce::MouseCursor::UpDownResizeCursor;
+                else if (c.style == syn::PanelControl::horizontalFader && e.x > c.bounds.getRight() - 8)
+                    shape = juce::MouseCursor::LeftRightResizeCursor;
+            }
+        setMouseCursor (shape);
     }
 
 private:
     PanelEditor& editor;
     juce::Point<int> dragStart;
-    bool dragging = false, moved = false;
+    juce::Rectangle<int> startBounds;
+    bool dragging = false, moved = false, resizing = false;
 };
 
 PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallback)
@@ -140,8 +199,22 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
 {
     for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &addButton, &backgroundButton, &coloursButton,
                                                             &resetButton, &selectedName, &labelCaption, &labelText,
-                                                            &sizeCaption, &size, &removeButton, &help })
+                                                            &sizeCaption, &size, &removeButton, &help,
+                                                            &styleCaption, &style })
         addAndMakeVisible (c);
+    for (int st = syn::PanelControl::knob; st <= syn::PanelControl::horizontalFader; ++st)
+        style.addItem (syn::PanelControl::nameOf ((syn::PanelControl::Style) st), st + 1);
+    style.onChange = [this]
+    {
+        if (selected < 0 || style.getSelectedId() == 0)
+            return;
+        auto& c = controls()[(size_t) selected];
+        c.setStyle ((syn::PanelControl::Style) (style.getSelectedId() - 1));
+        c.bounds.setPosition (juce::jlimit (0, juce::jmax (0, syn::Panel::width - c.bounds.getWidth()), c.bounds.getX()),
+                              juce::jlimit (0, juce::jmax (0, syn::Panel::height - c.bounds.getHeight()), c.bounds.getY()));
+        showSelection();
+        changed();
+    };
 
     addButton.onClick = [this] { showAddMenu(); };
     addButton.setTooltip ("Adds a knob that isn't on the panel yet, a line of text, or the articulation menu.");
@@ -172,7 +245,11 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
             return;
         auto& c = controls()[(size_t) selected];
         const int v = (int) size.getValue();
-        if (c.isKnob())
+        if (c.isKnob() && c.style == syn::PanelControl::verticalFader)
+            c.bounds.setHeight (v);
+        else if (c.isKnob() && c.style == syn::PanelControl::horizontalFader)
+            c.bounds.setWidth (v);
+        else if (c.isKnob())
             c.bounds.setSize (v, v);
         else if (c.kind == syn::PanelControl::articulations)
             c.bounds.setWidth (v);
@@ -185,7 +262,8 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
                               juce::jlimit (0, juce::jmax (0, syn::Panel::height - c.bounds.getHeight()), c.bounds.getY()));
         changed();
     };
-    help.setText ("Drag things to move them. Click one to rename or resize it; right-click to remove it. "
+    help.setText ("Drag things to move them. Click one to rename or resize it, or make a knob a fader; drag a "
+                  "fader's far end to lengthen it. Right-click to remove one. "
                   "SFZ players show no panel: they list the Volume and Release knobs by the names given here.",
                   juce::dontSendNotification);
     help.setJustificationType (juce::Justification::topLeft);
@@ -258,7 +336,8 @@ void PanelEditor::showSelection()
 {
     const auto& list = map.panel.controls.empty() ? shown : map.panel.controls;
     const bool any = juce::isPositiveAndBelow (selected, (int) list.size());
-    for (auto* c : std::initializer_list<juce::Component*> { &labelCaption, &labelText, &sizeCaption, &size, &removeButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &labelCaption, &labelText, &sizeCaption, &size, &removeButton,
+                                                            &styleCaption, &style })
         c->setVisible (any);
     if (! any)
     {
@@ -274,7 +353,17 @@ void PanelEditor::showSelection()
                                       juce::Colours::grey);
     labelText.setText (c.kind == syn::PanelControl::title && c.label.isEmpty() ? map.libraryName : c.label,
                        juce::dontSendNotification);
-    if (c.isKnob())
+    styleCaption.setVisible (c.isKnob());
+    style.setVisible (c.isKnob());
+    style.setSelectedId ((int) c.style + 1, juce::dontSendNotification);
+    if (c.isKnob() && c.style != syn::PanelControl::knob)
+    {
+        const bool vertical = c.style == syn::PanelControl::verticalFader;
+        sizeCaption.setText ("Length", juce::dontSendNotification);
+        size.setRange (vertical ? 80 : 100, vertical ? syn::Panel::height : 600, 5);
+        size.setValue (vertical ? c.bounds.getHeight() : c.bounds.getWidth(), juce::dontSendNotification);
+    }
+    else if (c.isKnob())
     {
         sizeCaption.setText ("Size", juce::dontSendNotification);
         size.setRange (50, 160, 5);
@@ -442,6 +531,9 @@ void PanelEditor::resized()
     selectedName.setBounds (area.removeFromTop (28));
     labelCaption.setBounds (area.removeFromTop (22));
     labelText.setBounds (area.removeFromTop (26));
+    area.removeFromTop (8);
+    styleCaption.setBounds (area.removeFromTop (22));
+    style.setBounds (area.removeFromTop (26));
     area.removeFromTop (8);
     sizeCaption.setBounds (area.removeFromTop (22));
     size.setBounds (area.removeFromTop (26));
