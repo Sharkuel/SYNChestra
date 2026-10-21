@@ -2,7 +2,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <set>
 
-/** The on-screen keyboard: plays the plugin, shows the selected row's keys (amber) and the keys
+/** The on-screen keyboard: plays the plugin, shows the selected row's keys (cyan) and the keys
     "Find notes" heard (a green bar), and offers a menu on right-click to set notes from it. */
 class NoteKeyboard : public juce::MidiKeyboardComponent, public juce::SettableTooltipClient
 {
@@ -70,7 +70,7 @@ private:
     {
         if (rowKeys.getStart() >= 0 && note >= rowKeys.getStart() && note <= rowKeys.getEnd())
         {
-            g.setColour (juce::Colour (0xffffb74d).withAlpha (0.45f));
+            g.setColour (juce::Colour (0xff4fd6ff).withAlpha (0.35f));   // the logo's cyan
             g.fillRect (area.reduced (1.0f, 0.0f));
         }
         if (sounding.count (note) > 0)
