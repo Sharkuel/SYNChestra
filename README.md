@@ -91,9 +91,16 @@ The name is a tribute to Devin Townsend's *Synchestra*.
 
    The Decent Sampler panel has Volume and Release knobs. With **Effect knobs** ticked it also
    gets Tone (a low-pass filter), Chorus, Delay, Reverb and Room knobs, all off to start so the
-   library sounds as recorded. **Background...** picks a picture for the panel; it's copied to
-   `Images/background.png`, scaled and cropped to the panel's 812 x 375 pixels. SFZ has no
-   standard panel, so these only apply to the .dspreset.
+   library sounds as recorded.
+
+   **Panel...** opens the panel editor, which shows the panel at its real size (812 x 375).
+   Drag the title, knobs and articulation menu where you want them; click one to rename or
+   resize it, right-click to remove it, and **Add...** puts back a knob or adds a line of text.
+   **Colours...** sets the background, text and knob colours, and **Background...** picks a
+   picture, copied to `Images/background.png` and scaled and cropped to fill the panel.
+   **Standard layout** puts everything back. SFZ has no standard panel: the .sfz gets the
+   Volume and Release knobs (CC7 and CC72) under the names given in the editor, which SFZ
+   players list.
 
 **Projects.** **Project... > Save project** writes a `.synchestra` file with the rows, the
 plugin and the plugin's own settings (the patch or kit picked in it). **Open project** brings

@@ -15,7 +15,7 @@ juce::File defaultOutputFolder()
 class PluginWindow : public juce::DocumentWindow
 {
 public:
-    PluginWindow (juce::AudioProcessorEditor* editor, const juce::String& name)
+    PluginWindow (juce::Component* editor, const juce::String& name)
         : DocumentWindow (name, juce::Colours::black, DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar (true);
@@ -104,7 +104,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &addDrumButton, (juce::Component*) &removeButton,
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz,
-                                (juce::Component*) &effectKnobs, (juce::Component*) &backgroundButton,
+                                (juce::Component*) &effectKnobs, (juce::Component*) &panelButton,
                                 (juce::Component*) &skipSameLayers, (juce::Component*) &projectButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
@@ -134,6 +134,8 @@ MainComponent::MainComponent()
     {
         map.libraryName = libraryName.getText();
         saveMap();
+        if (panelEditor != nullptr)
+            panelEditor->refresh();   // the title shows the library's name
     };
     addKeysButton.onClick = [this] { addGroup (syn::Group::keys()); };
     addKeysButton.setTooltip ("Adds a keyboard range: a recording every few keys, pitched to fill the keys between.");
@@ -212,7 +214,16 @@ MainComponent::MainComponent()
     effectKnobs.onClick = [this]
     {
         map.effects = effectKnobs.getToggleState();
+        // A panel laid out without effect knobs gets them back in their usual places.
+        auto& controls = map.panel.controls;
+        if (map.effects && ! controls.empty()
+            && std::none_of (controls.begin(), controls.end(), [] (const auto& c) { return c.isEffect(); }))
+            for (auto k : { syn::PanelControl::tone, syn::PanelControl::chorus, syn::PanelControl::delay,
+                            syn::PanelControl::reverb, syn::PanelControl::room })
+                controls.push_back (syn::Panel::standard (k));
         saveMap();
+        if (panelEditor != nullptr)
+            panelEditor->refresh();
     };
     effectKnobs.setTooltip ("Adds Tone, Chorus, Delay, Reverb and Room knobs to the Decent Sampler panel. "
                             "They start off, so the library sounds as recorded.");
@@ -224,7 +235,9 @@ MainComponent::MainComponent()
     skipSameLayers.setTooltip ("Leaves out a velocity layer that sounds just like the louder one, only quieter. "
                                "The louder recording covers its velocities and the sampler turns it down, which "
                                "saves disk space and the rest of that layer's takes.");
-    backgroundButton.onClick = [this] { chooseBackground(); };
+    panelButton.onClick = [this] { showPanelEditor(); };
+    panelButton.setTooltip ("Lay out the Decent Sampler panel: move and rename the knobs and title, pick the "
+                            "colours and a background picture.");
     projectButton.onClick = [this] { showProjectMenu(); };
     projectButton.setTooltip ("Save the rows, the plugin and the sound picked in it as a .synchestra project, "
                               "or open one to record a library again. Recording saves one next to the library.");
@@ -304,7 +317,7 @@ void MainComponent::resized()
     decentSampler.setBounds (row.removeFromLeft (210));
     sfz.setBounds (row.removeFromLeft (110));
     effectKnobs.setBounds (row.removeFromLeft (120));
-    backgroundButton.setBounds (row.removeFromLeft (170));
+    panelButton.setBounds (row.removeFromLeft (170));
     row.removeFromLeft (gap * 2);
     rateChoice.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (gap * 2);
@@ -455,7 +468,8 @@ void MainComponent::showMap()
     effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
     skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
     refreshOutputs();
-    showBackground();
+    if (panelEditor != nullptr)
+        panelEditor->refresh();
     refreshTable();
 }
 
@@ -677,6 +691,8 @@ void MainComponent::refreshTable()
     const int total = map.totalRecordings();
     totalLabel.setText (juce::String (total) + (total == 1 ? " recording" : " recordings"), juce::dontSendNotification);
     updateKeyboard();
+    if (panelEditor != nullptr)
+        panelEditor->refresh();   // a keyswitch may have added or removed the articulation menu
 }
 
 void MainComponent::addGroup (syn::Group group)
@@ -799,49 +815,23 @@ void MainComponent::chooseOutputFolder()
     });
 }
 
-void MainComponent::chooseBackground()
+void MainComponent::showPanelEditor()
 {
-    auto pick = [this]
+    if (panelWindow == nullptr)
     {
-        chooser = std::make_unique<juce::FileChooser> ("Pick a background picture for the Decent Sampler panel",
-                                                       juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
-                                                       "*.png;*.jpg;*.jpeg");
-        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                              [this] (const juce::FileChooser& fc)
+        auto editor = std::make_unique<PanelEditor> (map, [this]
         {
-            const auto file = fc.getResult();
-            if (file == juce::File())
-                return;
-            if (! juce::ImageFileFormat::loadFrom (file).isValid())
-                return setStatus ("Can't read " + file.getFileName() + " as a picture.");
-            map.backgroundImage = file.getFullPathName();
             saveMap();
-            showBackground();
-            setStatus ("The Decent Sampler panel will show " + file.getFileName()
-                       + ", scaled to fill its 812 x 375 pixels.");
+            setStatus (map.panel.controls.empty() ? "The Decent Sampler panel uses the standard layout."
+                                                  : "The Decent Sampler panel will be laid out as in the panel editor.");
         });
-    };
-    if (map.backgroundImage.isEmpty())
-        return pick();
-    juce::PopupMenu menu;
-    menu.addItem ("Choose another picture...", pick);
-    menu.addItem ("No picture", [this]
-    {
-        map.backgroundImage = {};
-        saveMap();
-        showBackground();
-    });
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (backgroundButton));
-}
-
-void MainComponent::showBackground()
-{
-    const juce::File file (map.backgroundImage);
-    backgroundButton.setButtonText (map.backgroundImage.isEmpty() ? "Background..." : "Background: " + file.getFileName());
-    backgroundButton.setTooltip (map.backgroundImage.isEmpty()
-                                     ? "Pick a picture for the Decent Sampler panel. Best at 812 x 375 pixels; "
-                                       "others are scaled and cropped to fit."
-                                     : file.getFullPathName());
+        panelEditor = editor.get();
+        panelWindow = std::make_unique<PluginWindow> (editor.release(), "Decent Sampler panel");
+        panelWindow->centreWithSize (panelWindow->getWidth(), panelWindow->getHeight());
+    }
+    panelEditor->refresh();
+    panelWindow->setVisible (true);
+    panelWindow->toFront (true);
 }
 
 void MainComponent::showOutputFolder()

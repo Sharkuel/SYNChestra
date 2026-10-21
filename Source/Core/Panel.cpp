@@ -1,0 +1,117 @@
+#include "Panel.h"
+
+namespace syn
+{
+juce::String PanelControl::nameOf (Kind kind)
+{
+    static const char* names[] = { "Volume", "Release", "Tone", "Chorus", "Delay", "Reverb", "Room",
+                                   "Title", "Text", "Articulations" };
+    return names[(int) kind];
+}
+
+juce::ValueTree PanelControl::toValueTree() const
+{
+    juce::ValueTree t ("Control");
+    t.setProperty ("kind", nameOf (kind), nullptr);
+    t.setProperty ("label", label, nullptr);
+    t.setProperty ("bounds", bounds.toString(), nullptr);
+    t.setProperty ("textSize", textSize, nullptr);
+    return t;
+}
+
+PanelControl PanelControl::fromValueTree (const juce::ValueTree& t)
+{
+    PanelControl c;
+    const auto kind = t.getProperty ("kind").toString();
+    for (int k = volume; k <= articulations; ++k)
+        if (nameOf ((Kind) k) == kind)
+            c.kind = (Kind) k;
+    c.label = t.getProperty ("label", c.label);
+    c.bounds = juce::Rectangle<int>::fromString (t.getProperty ("bounds").toString());
+    c.textSize = t.getProperty ("textSize", c.textSize);
+    return c;
+}
+
+PanelControl Panel::standard (PanelControl::Kind kind)
+{
+    PanelControl c;
+    c.kind = kind;
+    if (c.isKnob())
+    {
+        // Knobs sit in a row along the bottom, so a background picture shows above them.
+        c.label = PanelControl::nameOf (kind);
+        c.bounds = { 20 + 110 * (int) kind, height - 110, 90, 90 };
+    }
+    else if (kind == PanelControl::title)
+    {
+        c.bounds = { 20, 20, width - 280, 40 };
+        c.textSize = 28;
+    }
+    else if (kind == PanelControl::articulations)
+    {
+        c.bounds = { width - 230, 25, 210, 30 };
+    }
+    else
+    {
+        c.label = "Text";
+        c.bounds = { 20, 80, 300, 30 };
+    }
+    return c;
+}
+
+std::vector<PanelControl> Panel::standardLayout (bool effects, bool articulationMenu)
+{
+    std::vector<PanelControl> layout;
+    auto title = standard (PanelControl::title);
+    if (! articulationMenu)
+        title.bounds.setWidth (width - 40);
+    layout.push_back (title);
+    layout.push_back (standard (PanelControl::volume));
+    layout.push_back (standard (PanelControl::release));
+    if (effects)
+        for (auto k : { PanelControl::tone, PanelControl::chorus, PanelControl::delay, PanelControl::reverb, PanelControl::room })
+            layout.push_back (standard (k));
+    if (articulationMenu)
+        layout.push_back (standard (PanelControl::articulations));
+    return layout;
+}
+
+std::vector<PanelControl> Panel::layout (bool effects, bool articulationMenu) const
+{
+    if (controls.empty())
+        return standardLayout (effects, articulationMenu);
+    std::vector<PanelControl> layout;
+    for (const auto& c : controls)
+        if ((effects || ! c.isEffect()) && (articulationMenu || c.kind != PanelControl::articulations))
+            layout.push_back (c);
+    // A library that gained articulations after the panel was laid out still gets its menu.
+    if (articulationMenu && std::none_of (layout.begin(), layout.end(), [] (const auto& c) { return c.kind == PanelControl::articulations; }))
+        layout.push_back (standard (PanelControl::articulations));
+    return layout;
+}
+
+juce::ValueTree Panel::toValueTree() const
+{
+    juce::ValueTree t ("Panel");
+    t.setProperty ("background", background.toString(), nullptr);
+    t.setProperty ("textColour", textColour.toString(), nullptr);
+    t.setProperty ("knobColour", knobColour.toString(), nullptr);
+    for (const auto& c : controls)
+        t.appendChild (c.toValueTree(), nullptr);
+    return t;
+}
+
+Panel Panel::fromValueTree (const juce::ValueTree& t)
+{
+    Panel p;
+    if (! t.isValid())
+        return p;
+    p.background = juce::Colour::fromString (t.getProperty ("background", p.background.toString()).toString());
+    p.textColour = juce::Colour::fromString (t.getProperty ("textColour", p.textColour.toString()).toString());
+    p.knobColour = juce::Colour::fromString (t.getProperty ("knobColour", p.knobColour.toString()).toString());
+    for (const auto& child : t)
+        if (child.hasType ("Control"))
+            p.controls.push_back (PanelControl::fromValueTree (child));
+    return p;
+}
+} // namespace syn
