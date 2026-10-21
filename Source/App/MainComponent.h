@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/SampleMap.h"
+#include "../Core/Project.h"
 #include "LiveHost.h"
 #include "NoteKeyboard.h"
 
@@ -25,6 +26,13 @@ private:
     void refreshPluginChoices();
     static juce::String pluginLabel (const juce::PluginDescription&);
     void loadSelectedPlugin();
+    bool loadPlugin (const juce::PluginDescription&);
+    void showMap();
+    void showProjectMenu();
+    void openProject();
+    void saveProject();
+    syn::Project currentProject() const;
+    void useProject (const syn::Project&, const juce::String& name);
     void showPluginWindow();
     void addGroup (syn::Group);
     void removeGroup();
@@ -82,6 +90,7 @@ private:
         listenButton { "Listen" }, measureButton { "Measure" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, effectKnobs { "Effect knobs" },
         skipSameLayers { "Skip same layers" };
+    juce::TextButton projectButton { "Project..." };
     juce::TextButton backgroundButton { "Background..." };
     juce::ComboBox pluginChoice, rateChoice;
     juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;
