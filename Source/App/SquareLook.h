@@ -1,10 +1,33 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-/** JUCE's dark look with square corners on buttons and drop-down lists. */
+/** The logo's colours, black, cyan and white, with square corners on buttons and drop-down lists. */
 class SquareLook : public juce::LookAndFeel_V4
 {
 public:
+    static inline const juce::Colour cyan { 0xff4fd6ff };   // as in the logo's "S" and "estra"
+
+    SquareLook()
+        : LookAndFeel_V4 ({ 0xff0b0d10,     // window background
+                            0xff171b20,     // buttons, text boxes, lists
+                            0xff14181c,     // menus
+                            0xff2e3b44,     // outlines
+                            0xfff2f5f7,     // text
+                            cyan,           // sliders and ticks
+                            0xff000000,     // text on the highlight
+                            cyan,           // highlight
+                            0xfff2f5f7 })   // menu text
+    {
+        setColour (juce::TextEditor::highlightColourId, cyan.withAlpha (0.3f));
+        setColour (juce::TextEditor::focusedOutlineColourId, cyan);
+        setColour (juce::ToggleButton::tickColourId, cyan);
+        setColour (juce::ComboBox::arrowColourId, cyan);
+        setColour (juce::TableHeaderComponent::backgroundColourId, juce::Colour (0xff1d2329));
+        setColour (juce::TableHeaderComponent::textColourId, cyan);
+        setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff12161a));
+        setColour (juce::TextButton::buttonOnColourId, cyan.withAlpha (0.45f));
+    }
+
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
                                bool highlighted, bool down) override
     {

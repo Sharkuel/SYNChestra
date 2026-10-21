@@ -149,7 +149,7 @@ MainComponent::MainComponent()
 
     keyboardState.addListener (this);
     keyboard.setTooltip ("Click to play the plugin on the selected row's channel. Right-click a key to set it as a "
-                         "row's lowest or highest note, add a drum on it, or start and end a new key row. Amber: the selected row's keys. "
+                         "row's lowest or highest note, add a drum on it, or start and end a new key row. Cyan: the selected row's keys. "
                          "Green: keys Find notes heard.");
     keyboard.onKeyMenu = [this] (int note) { showKeyMenu (note); };
 
