@@ -8,7 +8,8 @@ namespace
 /** Each note plays a sine at its pitch, louder with velocity, while held, then fades over
     0.2 s. The left side is louder than the right, so the test can tell stereo was kept.
     Notes from 100 up are plucks: they die away over about 3.5 s and ignore note-off.
-    C1 and C#1 (24, 25) are keyswitches, silent: after C#1 notes play at a quarter of the level, until C1. */
+    Soft notes (velocity 40 and under) sound brighter, with a third harmonic; louder ones are
+    the same sound, only louder. C1 and C#1 (24, 25) are keyswitches, silent: after C#1 notes play at a quarter of the level, until C1. */
 class FakeSynth final : public juce::AudioPluginInstance
 {
 public:
@@ -46,7 +47,7 @@ public:
                     level *= std::exp (-1.0 / (0.03 * rate));
                 if (level < 1.0e-6)
                     continue;
-                const auto v = (float) (level * std::sin (phase));
+                const auto v = (float) (level * (std::sin (phase) + (bright ? 0.5 * std::sin (3.0 * phase) : 0.0)));
                 phase += juce::MathConstants<double>::twoPi * frequency / rate;
                 buffer.setSample (0, pos, v);
                 buffer.setSample (1, pos, v * 0.5f);
@@ -67,6 +68,7 @@ public:
                 frequency = juce::MidiMessage::getMidiNoteInHertz (msg.getNoteNumber());
                 held = true;
                 pluck = msg.getNoteNumber() >= 100;
+                bright = msg.getVelocity() <= 40;
                 channels.insert (msg.getChannel());
             }
             if (msg.isNoteOff() || msg.isAllNotesOff())
@@ -79,7 +81,7 @@ public:
 
 private:
     double rate = 48000.0, level = 0.0, phase = 0.0, frequency = 440.0;
-    bool held = false, pluck = false, soft = false;
+    bool held = false, pluck = false, soft = false, bright = false;
 };
 
 int failures = 0;
@@ -147,6 +149,7 @@ int main (int argc, char* argv[])
 
     syn::SampleMap map;
     map.libraryName = "Test Synth";
+    map.skipSameLayers = false;   // the synth's layers differ only in level: keep them all here
     syn::Group keys;
     keys.name = "Lead";
     keys.lowNote = 57;
@@ -259,10 +262,32 @@ int main (int argc, char* argv[])
     check (! plain.toDecentSampler().contains ("<effects") && ! plain.toDecentSampler().contains ("bgImage"),
            "effects and background can be left out");
 
+    // Same-sounding layers: 127, 95 and 64 are one sound at three levels, 32 is brighter.
+    {
+        syn::SampleMap layered;
+        layered.libraryName = "Layered";
+        syn::Group row;
+        row.name = "Keys";
+        row.lowNote = row.highNote = 60;
+        row.layers = 4;
+        row.roundRobins = 2;
+        row.holdSeconds = 0.3;
+        layered.groups = { row };
+        juce::String layeredReport;
+        const auto lib = syn::LibraryRecorder::record (synth, layered, {}, folder.getSiblingFile ("Layered"), nullptr, layeredReport);
+        check (lib.samples.size() == 2 * 2 && lib.samples[0].velocities == juce::Range<int> (33, 127)
+                   && lib.samples[2].velocities == juce::Range<int> (1, 32),
+               "layers that only differ in level are left out, and the louder one covers them");
+        check (layeredReport.contains ("2 velocity layers"), "the report says so (" + layeredReport + ")");
+        check (! syn::LibraryRecorder::soundsTheSame (juce::AudioBuffer<float> (2, 10), juce::AudioBuffer<float> (2, 10), 48000.0),
+               "too-short recordings are never called the same");
+    }
+
     // Release samples: the sound after key-up is kept as its own sample, played on key-up.
     {
         syn::SampleMap withRelease;
         withRelease.libraryName = "Released";
+        withRelease.skipSameLayers = false;
         syn::Group held;
         held.name = "Keys";
         held.lowNote = 57;

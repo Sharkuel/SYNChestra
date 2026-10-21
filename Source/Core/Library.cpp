@@ -444,6 +444,46 @@ LibraryRecorder::Timing LibraryRecorder::measureTiming (juce::AudioPluginInstanc
     return t;
 }
 
+bool LibraryRecorder::soundsTheSame (const juce::AudioBuffer<float>& louder, const juce::AudioBuffer<float>& softer,
+                                     double sampleRate)
+{
+    // Compare the first second, each scaled to the same loudness, at the best of a few small
+    // shifts (the start is found by level, so a quieter note can be trimmed a few samples later).
+    const int maxShift = 64;
+    const int length = juce::jmin (louder.getNumSamples(), softer.getNumSamples(), (int) sampleRate) - maxShift;
+    if (length < (int) (sampleRate * 0.05))
+        return false;
+    auto mono = [] (const juce::AudioBuffer<float>& b, int i)
+    {
+        float v = 0.0f;
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            v += b.getSample (ch, i);
+        return v;
+    };
+    auto level = [&] (const juce::AudioBuffer<float>& b)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < length; ++i)
+            sum += (double) mono (b, i) * mono (b, i);
+        return std::sqrt (sum / length);
+    };
+    const double a = level (louder), b = level (softer);
+    if (a <= 0.0 || b <= 0.0)
+        return false;
+    double best = std::numeric_limits<double>::max();
+    for (int shift = -maxShift; shift <= maxShift; shift += 1)
+    {
+        double diff = 0.0;
+        for (int i = maxShift; i < length; ++i)
+        {
+            const double d = mono (louder, i) / a - mono (softer, i + shift) / b;
+            diff += d * d;
+        }
+        best = juce::jmin (best, std::sqrt (diff / (length - maxShift)));
+    }
+    return best < 0.1;   // about 20 dB below the sound itself: the difference can't be told
+}
+
 juce::Array<int> LibraryRecorder::findSoundingNotes (juce::AudioPluginInstance& plugin, NoteRenderer::Settings settings,
                                                      int midiChannel, std::function<bool (int)> onProgress)
 {
@@ -503,7 +543,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
     Progress progress;
     progress.total = map.totalRecordings();
     juce::StringArray silent, failed;
-    int looped = 0;
+    int looped = 0, sameLayers = 0;
 
     for (int g = 0; g < (int) map.groups.size(); ++g)
     {
@@ -516,6 +556,10 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
         const auto groupFolder = "Samples/" + safeName (group.name);
         renderer.setSwitch (group.switchMessages());
         for (int n = 0; n < notes.size(); ++n)
+        {
+            // The last layer kept for this note: a softer one that sounds just like it is left out.
+            juce::AudioBuffer<float> keptAudio;
+            int keptVelocity = -1;
             for (int v = velocities.size(); --v >= 0;)   // loudest first: a cancelled run still has the main layer
                 for (int take = 1; take <= takes; ++take)
                 {
@@ -536,6 +580,22 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     {
                         silent.addIfNotAlreadyThere (group.name + " " + noteName (note));
                         continue;
+                    }
+                    if (take == 1 && map.skipSameLayers && keptVelocity >= 0
+                        && soundsTheSame (keptAudio, audio, settings.sampleRate))
+                    {
+                        // The kept layer answers these velocities too; the sampler turns it down.
+                        for (auto& kept : library.samples)
+                            if (kept.group == g && kept.rootNote == note && kept.velocities.getEnd() == keptVelocity)
+                                kept.velocities.setStart (group.velocityRangeFor (v).getStart());
+                        progress.done += takes - 1;
+                        ++sameLayers;
+                        break;
+                    }
+                    if (take == 1)
+                    {
+                        keptAudio.makeCopyOf (audio);
+                        keptVelocity = velocity;
                     }
                     Sample s;
                     s.group = g;
@@ -587,6 +647,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     }
                     library.samples.push_back (s);
                 }
+        }
     }
 
     // A silent note leaves a gap on the keyboard: its neighbours stretch over its keys.
@@ -616,6 +677,8 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
 
     report = "Recorded " + juce::String ((int) library.samples.size()) + " samples";
     report << (looped > 0 ? ", " + juce::String (looped) + " of them looped." : juce::String ("."));
+    if (sameLayers > 0)
+        report << " " << sameLayers << " velocity layers sounded like a louder one, only quieter, so were left out.";
     if (! silent.isEmpty())
         report << " Silent, so left out: " << silent.joinIntoString (", ") << ".";
     if (! failed.isEmpty())

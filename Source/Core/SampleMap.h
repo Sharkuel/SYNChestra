@@ -65,6 +65,7 @@ struct SampleMap
 {
     juce::String libraryName = "My Library";
     std::vector<Group> groups;
+    bool skipSameLayers = true;      // leave out a velocity layer that sounds like the louder one, only quieter
     bool effects = true;             // filter, chorus, delay and reverb knobs on the Decent Sampler panel
     juce::String backgroundImage;    // full path of a picture for the Decent Sampler panel, or empty
 

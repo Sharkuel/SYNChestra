@@ -75,6 +75,11 @@ public:
     };
     static Timing measureTiming (juce::AudioPluginInstance&, NoteRenderer::Settings, const Group&);
 
+    /** Whether two recordings of a note are the same sound apart from their level: the plugin
+        only turned the volume down for the softer one. */
+    static bool soundsTheSame (const juce::AudioBuffer<float>& louder, const juce::AudioBuffer<float>& softer,
+                               double sampleRate);
+
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 

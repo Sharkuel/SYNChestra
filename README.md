@@ -73,6 +73,11 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    Decent Sampler gets a menu to pick another and answers the same keyswitch notes, and the .sfz
    switches with the same notes (or CC values). Selecting a row also sends its keyswitch to the
    plugin, so the on-screen keyboard plays that articulation.
+   **Skip same layers** (on by default) compares each velocity layer with the louder one kept
+   before it. When the plugin only turned the volume down, the softer layer is left out, the
+   louder recording covers its velocities, and the sampler plays it softer. Layers whose sound
+   really changes (a brighter attack, a different articulation) are all kept.
+
 4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
 
    The Decent Sampler panel has Volume and Release knobs. With **Effect knobs** ticked it also
