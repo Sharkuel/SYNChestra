@@ -22,11 +22,48 @@ std::map<std::pair<int, int>, std::vector<const Sample*>> takesOf (const std::ve
 }
 } // namespace
 
+std::vector<int> Library::articulationRows() const
+{
+    std::vector<int> rows;
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+    {
+        const auto& group = map.groups[(size_t) g];
+        if ((group.switchNote() >= 0 || group.switchCc().first >= 0) && ! takesOf (samples, g).empty())
+            rows.push_back (g);
+    }
+    return rows;
+}
+
 juce::String Library::toSfz() const
 {
+    // Rows with a keyswitch are articulations: the sampler plays the one whose switch came last.
+    // Note switches share one key range; the first is on until another is pressed. CC switches
+    // play while the CC has their value; the first one's value is set at load.
+    const auto articulations = articulationRows();
+    int switchLow = 128, switchHigh = -1, switchDefault = -1;
+    std::map<int, int> ccDefaults;
+    for (const int g : articulations)
+    {
+        const auto& group = map.groups[(size_t) g];
+        if (const int note = group.switchNote(); note >= 0)
+        {
+            switchLow = juce::jmin (switchLow, note);
+            switchHigh = juce::jmax (switchHigh, note);
+            if (switchDefault < 0)
+                switchDefault = note;
+        }
+        else if (const auto [cc, value] = group.switchCc(); cc >= 0 && ccDefaults.count (cc) == 0)
+        {
+            ccDefaults[cc] = value;
+        }
+    }
+
     juce::String out;
     out << "// " << map.libraryName << ", recorded with SYNChestra\n\n";
-    out << "<control>\ndefault_path=\n\n";
+    out << "<control>\ndefault_path=\n";
+    for (const auto& [cc, value] : ccDefaults)
+        out << "set_cc" << cc << "=" << value << "\n";
+    out << "\n";
     for (int g = 0; g < (int) map.groups.size(); ++g)
     {
         const auto& group = map.groups[(size_t) g];
@@ -49,6 +86,11 @@ juce::String Library::toSfz() const
                 out << " ampeg_release=" << num (group.releaseSeconds);
             if (takes.size() > 1)
                 out << " seq_length=" << (int) takes.size();
+            if (const int note = group.switchNote(); note >= 0)
+                out << " sw_lokey=" << switchLow << " sw_hikey=" << switchHigh << " sw_last=" << note
+                    << " sw_default=" << switchDefault;
+            else if (const auto [cc, value] = group.switchCc(); cc >= 0)
+                out << " locc" << cc << "=" << value << " hicc" << cc << "=" << value;
             out << "\n";
             for (const auto* s : takes)
             {
@@ -152,6 +194,55 @@ juce::String Library::toDecentSampler() const
         knob ("Room", 0.0, 1.0, 0.7, "effect", 3, "FX_REVERB_ROOM_SIZE");
     }
 
+    // Articulations: only the first plays to start with. A menu on the panel picks another, and
+    // so do the keyswitch notes, as in the plugin.
+    std::map<int, int> dsIndex;   // table row -> Decent Sampler group, which skips rows with nothing recorded
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+        if (! takesOf (samples, g).empty())
+            dsIndex[g] = (int) dsIndex.size();
+    const auto articulations = articulationRows();
+    if (articulations.size() > 1)
+        title->setAttribute ("width", panelWidth - 280);   // room for the articulation menu
+    auto chooseArticulation = [&] (juce::XmlElement& parent, int chosen)
+    {
+        for (const int g : articulations)
+        {
+            auto* b = parent.createNewChildElement ("binding");
+            b->setAttribute ("type", "general");
+            b->setAttribute ("level", "group");
+            b->setAttribute ("position", dsIndex[g]);
+            b->setAttribute ("parameter", "ENABLED");
+            b->setAttribute ("translation", "fixed_value");
+            b->setAttribute ("translationValue", g == chosen ? "true" : "false");
+        }
+    };
+    if (articulations.size() > 1)
+    {
+        auto* menu = tab->createNewChildElement ("menu");
+        menu->setAttribute ("x", panelWidth - 230);
+        menu->setAttribute ("y", 25);
+        menu->setAttribute ("width", 210);
+        menu->setAttribute ("height", 30);
+        menu->setAttribute ("value", 1);
+        for (const int g : articulations)
+        {
+            auto* option = menu->createNewChildElement ("option");
+            option->setAttribute ("name", map.groups[(size_t) g].name);
+            chooseArticulation (*option, g);
+        }
+        juce::XmlElement* midi = nullptr;
+        for (const int g : articulations)
+            if (const int note = map.groups[(size_t) g].switchNote(); note >= 0)
+            {
+                if (midi == nullptr)
+                    midi = root.createNewChildElement ("midi");
+                auto* n = midi->createNewChildElement ("note");
+                n->setAttribute ("note", note);
+                n->setAttribute ("eventType", "note_on");
+                chooseArticulation (*n, g);
+            }
+    }
+
     auto* groups = root.createNewChildElement ("groups");
     groups->setAttribute ("attack", 0.0);
     groups->setAttribute ("decay", 0.0);
@@ -165,6 +256,9 @@ juce::String Library::toDecentSampler() const
             continue;
         auto* xml = groups->createNewChildElement ("group");
         xml->setAttribute ("name", group.name);
+        if (articulations.size() > 1 && std::find (articulations.begin(), articulations.end(), g) != articulations.begin()
+            && std::find (articulations.begin(), articulations.end(), g) != articulations.end())
+            xml->setAttribute ("enabled", "false");
         // A one-shot keeps ringing after key-up: the release lasts as long as the longest take could.
         if (group.oneShot)
             xml->setAttribute ("release", 30.0);
@@ -261,6 +355,7 @@ LibraryRecorder::Timing LibraryRecorder::measureTiming (juce::AudioPluginInstanc
     constexpr double longHold = 20.0, shortHold = 0.1;
     settings.maxSeconds = 30.0;
     NoteRenderer renderer (plugin, settings);
+    renderer.setSwitch (group.switchMessages());
     const int note = group.sampledNotes().isEmpty() ? group.lowNote : group.sampledNotes().getFirst();
     Timing t;
 
@@ -357,6 +452,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
         const auto velocities = group.velocities();
         const int takes = juce::jmax (1, group.roundRobins);
         const auto groupFolder = "Samples/" + safeName (group.name);
+        renderer.setSwitch (group.switchMessages());
         for (int n = 0; n < notes.size(); ++n)
             for (int v = velocities.size(); --v >= 0;)   // loudest first: a cancelled run still has the main layer
                 for (int take = 1; take <= takes; ++take)

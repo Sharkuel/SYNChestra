@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_data_structures/juce_data_structures.h>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 namespace syn
 {
@@ -18,6 +19,7 @@ struct Group
     bool pitched = true;               // false: every key plays its own recording unpitched (drums)
     bool oneShot = false;              // true: a recording plays to its end, whatever the key does
     bool loop = true;                  // loop sustained recordings, so a key can be held for as long as you like
+    juce::String keyswitch;            // sent before each note to pick an articulation: a note ("C0") or a CC ("CC32=10")
     int midiChannel = 1;
 
     /** The notes recorded, lowest first: lowNote, every step above it, and always highNote. */
@@ -35,6 +37,16 @@ struct Group
 
     /** The velocities velocities()[index] answers: from just above the softer layer up to itself. */
     juce::Range<int> velocityRangeFor (int index) const;
+
+    /** The keyswitch note, or -1 when the row has none or switches with a CC. */
+    int switchNote() const;
+    /** The keyswitch CC number and value, or -1s when the row doesn't switch with a CC. */
+    std::pair<int, int> switchCc() const;
+    /** What to send the plugin before each note: the keyswitch note pressed and let go, or the CC. */
+    std::vector<juce::MidiMessage> switchMessages() const;
+    /** A keyswitch as typed ("c0", "24", "cc 32 = 10") in the form the table shows, or empty
+        when it isn't one. */
+    static juce::String tidyKeyswitch (const juce::String&);
 
     juce::ValueTree toValueTree() const;
     static Group fromValueTree (const juce::ValueTree&);
@@ -63,4 +75,7 @@ struct SampleMap
 
 /** "C4" for 60, the convention most samplers (and Decent Sampler) use. */
 juce::String noteName (int note);
+
+/** A note number ("60") or name ("C4", any case), or -1. */
+int parseNote (juce::String text);
 } // namespace syn

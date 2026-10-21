@@ -69,17 +69,6 @@ private:
 };
 
 /** A note number from "60", "C4" or "c#4". -1 if it's neither. */
-int parseNote (juce::String text)
-{
-    text = text.trim();
-    if (text.containsOnly ("0123456789"))
-        return text.isEmpty() ? -1 : juce::jlimit (0, 127, text.getIntValue());
-    for (int n = 0; n < 128; ++n)
-        if (syn::noteName (n).equalsIgnoreCase (text))
-            return n;
-    return -1;
-}
-
 juce::String seconds (double s)
 {
     return juce::String (s, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
@@ -168,11 +157,13 @@ MainComponent::MainComponent()
     header.addColumn ("One-shot", colOneShot, 66);
     header.addColumn ("Loop", colLoop, 46);
     header.addColumn ("Channel", colChannel, 64);
+    header.addColumn ("Keyswitch", colSwitch, 76);
     header.addColumn ("Recordings", colCount, 80);
     table.setRowHeight (26);
     table.setTooltip ("Lowest and Highest take note numbers or names (C4 is 60). Every: a recording every this many "
                       "keys. Layers: velocity layers. Hold: how long each note is held before its release. Loop: "
-                      "sustained recordings get a seamless loop, so a key can be held for as long as you like.");
+                      "sustained recordings get a seamless loop, so a key can be held for as long as you like. "
+                      "Keyswitch: a note (C1) or CC (CC32=10) sent before each note to pick an articulation.");
 
     decentSampler.setToggleState (settings->getBoolValue ("writeDecentSampler", true), juce::dontSendNotification);
     sfz.setToggleState (settings->getBoolValue ("writeSfz", true), juce::dontSendNotification);
@@ -512,6 +503,8 @@ void MainComponent::listenToGroup()
     const auto notes = group.sampledNotes();
     const int note = notes[notes.size() / 2];
     const int channel = juce::jlimit (1, 16, group.midiChannel);
+    for (const auto& m : group.switchMessages())
+        live.play (m);
     live.play (juce::MidiMessage::noteOn (channel, note, (juce::uint8) 100));
     juce::Timer::callAfterDelay (juce::jmax (10, (int) (group.holdSeconds * 1000.0)),
                                  [safe = juce::Component::SafePointer<MainComponent> (this), channel, note]
@@ -745,6 +738,11 @@ void MainComponent::updateKeyboard()
 void MainComponent::selectedRowsChanged (int)
 {
     updateKeyboard();
+    // The keyboard plays the selected row's articulation.
+    const int row = table.getSelectedRow();
+    if (plugin != nullptr && juce::isPositiveAndBelow (row, (int) map.groups.size()))
+        for (const auto& m : map.groups[(size_t) row].switchMessages())
+            live.play (m);
 }
 
 void MainComponent::handleNoteOn (juce::MidiKeyboardState*, int, int note, float velocity)
@@ -949,6 +947,7 @@ juce::String MainComponent::cellText (const syn::Group& g, int column) const
         case colHold:        return seconds (g.holdSeconds);
         case colRelease:     return seconds (g.releaseSeconds);
         case colChannel:     return juce::String (g.midiChannel);
+        case colSwitch:      return g.keyswitch;
         case colCount:       return juce::String (g.sampledNotes().size() * g.velocities().size() * juce::jmax (1, g.roundRobins));
         default:             return {};
     }
@@ -962,14 +961,15 @@ void MainComponent::setCell (int row, int column, const juce::String& text)
     switch (column)
     {
         case colName:        if (text.trim().isNotEmpty()) g.name = text.trim(); break;
-        case colLow:         if (const int n = parseNote (text); n >= 0) g.lowNote = n; break;
-        case colHigh:        if (const int n = parseNote (text); n >= 0) g.highNote = n; break;
+        case colLow:         if (const int n = syn::parseNote (text); n >= 0) g.lowNote = n; break;
+        case colHigh:        if (const int n = syn::parseNote (text); n >= 0) g.highNote = n; break;
         case colStep:        g.step = juce::jlimit (1, 127, text.getIntValue()); break;
         case colLayers:      g.layers = juce::jlimit (1, 127, text.getIntValue()); break;
         case colRoundRobins: g.roundRobins = juce::jlimit (1, 16, text.getIntValue()); break;
         case colHold:        g.holdSeconds = juce::jlimit (0.01, 30.0, text.getDoubleValue()); break;
         case colRelease:     g.releaseSeconds = juce::jlimit (0.0, 30.0, text.getDoubleValue()); break;
         case colChannel:     g.midiChannel = juce::jlimit (1, 16, text.getIntValue()); break;
+        case colSwitch:      g.keyswitch = syn::Group::tidyKeyswitch (text); break;
         default: break;
     }
     saveMap();

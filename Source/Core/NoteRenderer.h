@@ -31,6 +31,10 @@ public:
 
     const Settings& getSettings() const { return settings; }
 
+    /** MIDI sent before every note, once the last one has died away: a keyswitch or CC that
+        picks the articulation to record. */
+    void setSwitch (std::vector<juce::MidiMessage> messages) { switchMessages = std::move (messages); }
+
 private:
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
     void waitForSilence (int midiChannel);
@@ -38,5 +42,6 @@ private:
 
     juce::AudioPluginInstance& plugin;
     Settings settings;
+    std::vector<juce::MidiMessage> switchMessages;
 };
 } // namespace syn

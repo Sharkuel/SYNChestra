@@ -29,6 +29,7 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    | One-shot | On for drums and hits: a recording plays to its end, whatever the key does |
    | Loop | Sustained recordings get a seamless loop, so a key can be held for as long as you like |
    | Channel | The MIDI channel the notes are sent on (10 for most drum plugins) |
+   | Keyswitch | A note (C1) or CC (CC32=10) sent before each note, to record one articulation |
 
    **Add keys** adds a keyboard range (a recording every 3 keys from C2 to C7 by default).
    **Add drum** adds a single unpitched one-shot note. **Listen** plays the selected row's middle
@@ -60,6 +61,13 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    row to the run of sounding keys around it, or add a new key row for that run. To draw a key
    row yourself, right-click its first key and choose **Start a new key row**, then right-click
    its last key and choose **End the new key row here**.
+   **Articulations.** To record a plugin's articulations (sustain, staccato, pizzicato...), add
+   a row for each with the same keys, and type the plugin's keyswitch for it in **Keyswitch**: a
+   note such as `C1`, or a CC such as `CC32=10` for plugins that switch with a controller. Each
+   row is recorded after its switch. In the library, the first articulation plays to start with;
+   Decent Sampler gets a menu to pick another and answers the same keyswitch notes, and the .sfz
+   switches with the same notes (or CC values). Selecting a row also sends its keyswitch to the
+   plugin, so the on-screen keyboard plays that articulation.
 4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
 
    The Decent Sampler panel has Volume and Release knobs. With **Effect knobs** ticked it also
