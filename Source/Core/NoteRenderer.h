@@ -18,7 +18,17 @@ public:
         double silenceSeconds = 0.3;     // ...for this long
         double fadeSeconds = 0.01;       // a short fade-out at the cut, so the end never clicks
         double giveUpSeconds = 1.0;      // a note still silent after this plays nothing
+        int outputChannel = 0;           // the first channel of the stereo pair recorded: 0 is the main output
     };
+
+    /** A stereo output a plugin can be recorded from: its name and first channel. */
+    struct Output
+    {
+        juce::String name;
+        int firstChannel = 0;
+    };
+    /** The plugin's outputs on its active busses, in pairs ("Main", "Out 3-4"...). */
+    static std::vector<Output> outputsOf (const juce::AudioPluginInstance&);
 
     NoteRenderer (juce::AudioPluginInstance& plugin, Settings settings);
     ~NoteRenderer();

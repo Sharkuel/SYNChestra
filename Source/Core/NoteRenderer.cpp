@@ -54,12 +54,44 @@ void NoteRenderer::waitForSilence (int midiChannel)
 void NoteRenderer::addMainOutput (juce::AudioBuffer<float>& dest, int destStart,
                                   const juce::AudioBuffer<float>& src, int n)
 {
-    // The main output only: a mono one goes to both sides, and extra busses (multi-outs) are left out.
+    // A chosen pair of a multi-out plugin's outputs.
+    if (const int first = settings.outputChannel; first > 0 && first < src.getNumChannels())
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            dest.copyFrom (ch, destStart, src, juce::jmin (first + ch, src.getNumChannels() - 1), 0, n);
+        return;
+    }
+    // The main output: a mono one goes to both sides, and extra busses (multi-outs) are left out.
     auto* bus = plugin.getBus (false, 0);
     const int outs = juce::jlimit (1, juce::jmin (2, src.getNumChannels()),
                                    bus != nullptr ? bus->getNumberOfChannels() : 2);
     for (int ch = 0; ch < 2; ++ch)
         dest.copyFrom (ch, destStart, src, juce::jmin (ch, outs - 1), 0, n);
+}
+
+std::vector<NoteRenderer::Output> NoteRenderer::outputsOf (const juce::AudioPluginInstance& plugin)
+{
+    std::vector<Output> outputs;
+    int channel = 0;
+    for (int b = 0; b < plugin.getBusCount (false); ++b)
+    {
+        const auto* bus = plugin.getBus (false, b);
+        if (bus == nullptr || ! bus->isEnabled())
+            continue;
+        const int count = bus->getNumberOfChannels();
+        const auto busName = bus->getName().isNotEmpty() ? bus->getName() : "Output " + juce::String (b + 1);
+        for (int c = 0; c < count; c += 2)
+        {
+            auto name = busName;
+            if (count > 2)
+                name << " " << (c + 1) << "-" << juce::jmin (c + 2, count);
+            outputs.push_back ({ b == 0 && c == 0 ? "Main (" + name + ")" : name, channel + c });
+        }
+        channel += count;
+    }
+    if (outputs.empty())
+        outputs.push_back ({ "Main", 0 });
+    return outputs;
 }
 
 juce::AudioBuffer<float> NoteRenderer::render (int note, int velocity, double holdSeconds, int midiChannel,

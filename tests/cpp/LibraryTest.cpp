@@ -2,6 +2,7 @@
 // so the recorder can be checked without a commercial plugin. Usage: SYNChestra_tests OUTPUT_FOLDER
 #include "../../Source/Core/Library.h"
 #include "../../Source/Core/Project.h"
+#include "../../Source/Core/LibraryPlayer.h"
 #include <juce_graphics/juce_graphics.h>
 
 namespace
@@ -15,6 +16,11 @@ class FakeSynth final : public juce::AudioPluginInstance
 {
 public:
     FakeSynth() : AudioPluginInstance (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo())) {}
+    /** With a second stereo output, off to start, that plays the same note at a fifth of the level, centred. */
+    struct MultiOut {};
+    explicit FakeSynth (MultiOut)
+        : AudioPluginInstance (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo())
+                                                .withOutput ("Aux", juce::AudioChannelSet::stereo(), false)) {}
 
     const juce::String getName() const override { return "Fake Synth"; }
     void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); d.isInstrument = true; }
@@ -52,6 +58,8 @@ public:
                 phase += juce::MathConstants<double>::twoPi * frequency / rate;
                 buffer.setSample (0, pos, v);
                 buffer.setSample (1, pos, v * 0.5f);
+                for (int ch = 2; ch < juce::jmin (4, buffer.getNumChannels()); ++ch)
+                    buffer.setSample (ch, pos, v * 0.2f);
             }
         };
         for (const auto m : midi)
@@ -200,6 +208,67 @@ int main (int argc, char* argv[])
     else
     {
         check (false, "the first sample can be read");
+    }
+
+    // Trying the library: the player plays it from MIDI as a sampler would.
+    {
+        syn::LibraryPlayer player;
+        check (player.load (library, folder, 48000.0).isEmpty() && player.isLoaded(), "the player loads the library");
+        auto play = [&player] (std::vector<juce::MidiMessage> messages, double seconds)
+        {
+            juce::AudioBuffer<float> out (2, (int) (seconds * 48000.0));
+            out.clear();
+            juce::MidiBuffer midi;
+            for (const auto& m : messages)
+                midi.addEvent (m, 0);
+            player.render (out, midi);
+            return out;
+        };
+        const auto lead = play ({ juce::MidiMessage::noteOn (1, 59, (juce::uint8) 127) }, 0.2);
+        const float left = lead.getRMSLevel (0, 0, lead.getNumSamples()), right = lead.getRMSLevel (1, 0, lead.getNumSamples());
+        check (left > 0.1f && right > 0.4f * left && right < 0.6f * left, "a key plays its recording, in stereo");
+        const auto released = play ({ juce::MidiMessage::noteOff (1, 59) }, 1.0);
+        check (released.getMagnitude (0, released.getNumSamples() - 4800, 4800) < 0.001f, "key-up fades it out");
+        const auto between = play ({ juce::MidiMessage::noteOn (1, 58, (juce::uint8) 127) }, 0.2);
+        check (between.getRMSLevel (0, 0, between.getNumSamples()) > 0.1f, "a key between recordings plays a pitched neighbour");
+        player.allNotesOff();
+        const auto soft = play ({ juce::MidiMessage::noteOn (1, 59, (juce::uint8) 40) }, 0.2);
+        check (soft.getRMSLevel (0, 0, soft.getNumSamples()) < 0.5f * left, "a soft key plays softer");
+        player.allNotesOff();
+        check (play ({ juce::MidiMessage::noteOn (10, 41, (juce::uint8) 127) }, 0.2).getMagnitude (0, 0, 9600) < 1.0e-6f,
+               "a key no row covers plays nothing");
+        // With a release so short that key-up would silence it at once, a one-shot still plays on.
+        auto quickRelease = library;
+        quickRelease.map.groups[1].releaseSeconds = 0.001;
+        player.load (quickRelease, folder, 48000.0);
+        play ({ juce::MidiMessage::noteOn (10, 40, (juce::uint8) 127) }, 0.05);
+        const auto drumOn = play ({ juce::MidiMessage::noteOff (10, 40) }, 0.02);
+        check (drumOn.getMagnitude (0, 480, 480) > 0.1f, "a one-shot drum plays on after key-up");
+        quickRelease.map.groups[1].oneShot = false;
+        player.load (quickRelease, folder, 48000.0);
+        play ({ juce::MidiMessage::noteOn (10, 40, (juce::uint8) 127) }, 0.05);
+        const auto drumOff = play ({ juce::MidiMessage::noteOff (10, 40) }, 0.02);
+        check (drumOff.getMagnitude (0, 480, 480) < 1.0e-6f, "a key that isn't a one-shot stops after its release");
+    }
+
+    // A multi-out plugin: its second output is off until turned on, then recorded on its own.
+    {
+        FakeSynth multi { FakeSynth::MultiOut {} };
+        check (syn::NoteRenderer::outputsOf (multi).size() == 1, "an output that's off isn't offered");
+        multi.enableAllBuses();
+        const auto outputs = syn::NoteRenderer::outputsOf (multi);
+        check (outputs.size() == 2 && outputs[1].firstChannel == 2 && outputs[1].name == "Aux"
+                   && outputs[0].name.startsWith ("Main"),
+               "each stereo output is offered by name");
+        syn::NoteRenderer::Settings mainOut, auxOut;
+        auxOut.outputChannel = 2;
+        const auto fromMain = syn::NoteRenderer (multi, mainOut).render (60, 127, 0.3);
+        const auto fromAux = syn::NoteRenderer (multi, auxOut).render (60, 127, 0.3);
+        const float mainLeft = fromMain.getRMSLevel (0, 0, fromMain.getNumSamples());
+        const float auxLeft = fromAux.getRMSLevel (0, 0, fromAux.getNumSamples());
+        const float auxRight = fromAux.getRMSLevel (1, 0, fromAux.getNumSamples());
+        check (auxLeft > 0.15f * mainLeft && auxLeft < 0.25f * mainLeft && std::abs (auxLeft - auxRight) < 0.01f * auxLeft,
+               "the chosen output is the one recorded");
     }
 
     // A small picture for the Decent Sampler panel, which writePresets scales to fill it.

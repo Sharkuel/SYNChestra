@@ -2,6 +2,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/SampleMap.h"
 #include "../Core/Project.h"
+#include "../Core/Library.h"
+#include "../Core/LibraryPlayer.h"
 #include "LiveHost.h"
 #include "NoteKeyboard.h"
 
@@ -34,6 +36,9 @@ private:
     syn::Project currentProject() const;
     void useProject (const syn::Project&, const juce::String& name);
     void showPluginWindow();
+    void refreshOutputs();
+    void chooseOutput();
+    void setPreview (bool on);
     void addGroup (syn::Group);
     void removeGroup();
     void listenToGroup();
@@ -92,12 +97,16 @@ private:
         skipSameLayers { "Skip same layers" };
     juce::TextButton projectButton { "Project..." };
     juce::TextButton backgroundButton { "Background..." };
-    juce::ComboBox pluginChoice, rateChoice;
+    juce::TextButton previewButton { "Try library" };
+    juce::ComboBox pluginChoice, rateChoice, outputChoice;
     juce::Label nameLabel { {}, "Library name" }, saveToLabel { {}, "Save to" }, saveToPath, totalLabel;
     juce::TextEditor libraryName, pluginSearch;
     juce::TableListBox table { {}, this };
     juce::MidiKeyboardState keyboardState;
     NoteKeyboard keyboard { keyboardState };
+    std::optional<syn::Library> lastLibrary;   // the library recorded last, which Try library plays
+    juce::File lastLibraryFolder;
+    std::unique_ptr<syn::LibraryPlayer> player;
     int newRowStart = -1;   // first key of a key row being drawn on the keyboard
     juce::Label status;
     juce::TooltipWindow tooltips { this };

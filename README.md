@@ -13,6 +13,10 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    that crashes is just skipped.
 2. Pick a plugin and press **Load plugin**. Its window opens: choose the sound you want there.
    Any connected MIDI keyboard plays it, so you can try it first.
+
+   **Output** (top right) picks which of the plugin's outputs is heard and recorded. Multi-out
+   plugins (drum kits, Kontakt) can send each instrument to its own pair: pick one to record just
+   that. Outputs the plugin keeps off are listed once you choose **Turn on all outputs**.
 3. Describe what to record in the table. Each row is a group:
 
    | Column | What it does |
@@ -79,6 +83,11 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    really changes (a brighter attack, a different articulation) are all kept.
 
 4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
+
+   **Try library** then plays what you just recorded from the on-screen keyboard and your MIDI
+   inputs, the way a sampler would (key and velocity ranges, round robins, loops, release,
+   key-up sounds and keyswitches), so you can hear it before opening it elsewhere. Click it again
+   to go back to the plugin.
 
    The Decent Sampler panel has Volume and Release knobs. With **Effect knobs** ticked it also
    gets Tone (a low-pass filter), Chorus, Delay, Reverb and Room knobs, all off to start so the

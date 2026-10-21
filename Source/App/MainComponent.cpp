@@ -5,6 +5,7 @@
 namespace
 {
 constexpr int blockSize = 512;
+constexpr int turnOnAllOutputs = 1000;   // an item in the output list
 
 juce::File defaultOutputFolder()
 {
@@ -108,7 +109,8 @@ MainComponent::MainComponent()
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
-                                (juce::Component*) &measureButton,
+                                (juce::Component*) &measureButton, (juce::Component*) &previewButton,
+                                (juce::Component*) &outputChoice,
                                 (juce::Component*) &findButton, (juce::Component*) &keyboard,
                                 (juce::Component*) &status })
         addAndMakeVisible (c);
@@ -123,6 +125,10 @@ MainComponent::MainComponent()
     loadButton.onClick = [this] { loadSelectedPlugin(); };
     showButton.onClick = [this] { showPluginWindow(); };
     showButton.setTooltip ("Opens the plugin's own window, to pick the sound you want to record.");
+    outputChoice.onChange = [this] { chooseOutput(); };
+    outputChoice.setTooltip ("The plugin output that's heard and recorded. Multi-out plugins (drum kits, Kontakt) "
+                             "can send each instrument to its own pair; pick one to record just that.");
+    outputChoice.setTextWhenNothingSelected ("Main output");
 
     libraryName.onTextChange = [this]
     {
@@ -190,6 +196,11 @@ MainComponent::MainComponent()
     measureButton.onClick = [this] { measureGroup(); };
     measureButton.setTooltip ("Plays the selected row's lowest note to hear how long it rings, then sets Hold, "
                               "Release, One-shot and Loop to suit it.");
+    previewButton.setClickingTogglesState (true);
+    previewButton.onClick = [this] { setPreview (previewButton.getToggleState()); };
+    previewButton.setTooltip ("Plays the library you just recorded from the keyboard and your MIDI inputs, as a "
+                              "sampler would, so you can try it before opening it elsewhere. Click again to go "
+                              "back to the plugin.");
     recordButton.onClick = [this] { recordLibrary(); };
     recordButton.setTooltip ("Records every ticked row into Samples, then writes the library's presets.");
     status.setJustificationType (juce::Justification::topLeft);
@@ -227,6 +238,7 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    live.setPreview (nullptr);
     setLive (false);
     knownPlugins.removeChangeListener (this);
     keyboardState.removeListener (this);
@@ -246,6 +258,8 @@ void MainComponent::resized()
     row.removeFromLeft (gap);
     pluginSearch.setBounds (row.removeFromLeft (160));
     row.removeFromLeft (gap);
+    outputChoice.setBounds (row.removeFromRight (150));
+    row.removeFromRight (gap);
     showButton.setBounds (row.removeFromRight (110));
     row.removeFromRight (gap);
     loadButton.setBounds (row.removeFromRight (110));
@@ -278,6 +292,8 @@ void MainComponent::resized()
     listenButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap);
     measureButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (gap);
+    previewButton.setBounds (row.removeFromRight (100));
     row.removeFromRight (gap * 2);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (90));
@@ -427,6 +443,7 @@ bool MainComponent::loadPlugin (const juce::PluginDescription& desc)
     plugin->prepareToPlay (sampleRate(), blockSize);
     showPluginWindow();
     setLive (true);
+    refreshOutputs();
     return true;
 }
 
@@ -437,6 +454,7 @@ void MainComponent::showMap()
     libraryName.setText (map.libraryName, juce::dontSendNotification);
     effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
     skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
+    refreshOutputs();
     showBackground();
     refreshTable();
 }
@@ -532,6 +550,91 @@ void MainComponent::showPluginWindow()
     }
     if (pluginWindow != nullptr)
         pluginWindow->setVisible (true);
+    refreshOutputs();
+}
+
+void MainComponent::refreshOutputs()
+{
+    outputChoice.clear (juce::dontSendNotification);
+    live.setOutputChannel (0);
+    if (plugin == nullptr)
+        return;
+    auto outputs = syn::NoteRenderer::outputsOf (*plugin);
+    bool someOff = false;
+    for (int b = 0; b < plugin->getBusCount (false); ++b)
+        if (auto* bus = plugin->getBus (false, b); bus != nullptr && ! bus->isEnabled())
+            someOff = true;
+    const auto has = [&outputs] (int first)
+    {
+        return std::any_of (outputs.begin(), outputs.end(), [first] (const auto& o) { return o.firstChannel == first; });
+    };
+    // A project recorded from another output: turn the plugin's other outputs on to find it.
+    if (map.outputChannel > 0 && ! has (map.outputChannel) && someOff)
+    {
+        setLive (false);
+        plugin->enableAllBuses();
+        plugin->prepareToPlay (sampleRate(), blockSize);
+        setLive (true);
+        outputs = syn::NoteRenderer::outputsOf (*plugin);
+        someOff = false;
+    }
+    for (const auto& o : outputs)
+        outputChoice.addItem (o.name, o.firstChannel + 1);
+    if (someOff)
+        outputChoice.addItem ("Turn on all outputs", turnOnAllOutputs);
+    const int first = has (map.outputChannel) ? map.outputChannel : 0;
+    outputChoice.setSelectedId (first + 1, juce::dontSendNotification);
+    live.setOutputChannel (first);
+}
+
+void MainComponent::chooseOutput()
+{
+    if (plugin == nullptr)
+        return;
+    if (outputChoice.getSelectedId() == turnOnAllOutputs)
+    {
+        setLive (false);
+        plugin->enableAllBuses();
+        plugin->prepareToPlay (sampleRate(), blockSize);
+        setLive (true);
+        refreshOutputs();
+        return setStatus ("Turned on all of " + plugin->getName() + "'s outputs: "
+                          + juce::String (outputChoice.getNumItems()) + " to pick from.");
+    }
+    map.outputChannel = juce::jmax (0, outputChoice.getSelectedId() - 1);
+    saveMap();
+    live.setOutputChannel (map.outputChannel);
+    setStatus ("Hearing and recording " + outputChoice.getText() + ".");
+}
+
+void MainComponent::setPreview (bool on)
+{
+    live.setPreview (nullptr);
+    player = nullptr;
+    if (! on)
+    {
+        previewButton.setToggleState (false, juce::dontSendNotification);
+        return setStatus (plugin != nullptr ? "The keyboard plays " + plugin->getName() + " again." : juce::String());
+    }
+    if (! lastLibrary.has_value())
+    {
+        previewButton.setToggleState (false, juce::dontSendNotification);
+        return setStatus ("Record a library first, then try it here.");
+    }
+    juce::MouseCursor::showWaitCursor();
+    auto loaded = std::make_unique<syn::LibraryPlayer>();
+    const auto error = loaded->load (*lastLibrary, lastLibraryFolder, live.getSampleRate());
+    juce::MouseCursor::hideWaitCursor();
+    if (error.isNotEmpty())
+    {
+        previewButton.setToggleState (false, juce::dontSendNotification);
+        return setStatus (error);
+    }
+    player = std::move (loaded);
+    live.setPreview (player.get());
+    previewButton.setToggleState (true, juce::dontSendNotification);
+    setStatus ("The keyboard and your MIDI inputs play " + lastLibrary->map.libraryName
+               + " as recorded. Click Try library again to go back to the plugin.");
 }
 
 void MainComponent::setLive (bool on)
@@ -633,6 +736,7 @@ void MainComponent::measureGroup()
     syn::NoteRenderer::Settings render;
     render.sampleRate = sampleRate();
     render.blockSize = blockSize;
+    render.outputChannel = map.outputChannel;
     const auto group = map.groups[(size_t) row];
     auto* instrument = plugin.get();
     auto timing = std::make_shared<syn::LibraryRecorder::Timing>();
@@ -791,13 +895,16 @@ void MainComponent::recordLibrary()
     syn::NoteRenderer::Settings render;
     render.sampleRate = sampleRate();
     render.blockSize = blockSize;
+    render.outputChannel = map.outputChannel;
     auto* instrument = plugin.get();
+    auto recorded = std::make_shared<syn::Library>();
+    setPreview (false);
 
-    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, writeDs, writeSfz]
+    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, writeDs, writeSfz, recorded]
                                             (juce::ThreadWithProgressWindow& window)
     {
         juce::String report;
-        const auto library = syn::LibraryRecorder::record (*instrument, toRecord, render, folder,
+        const auto& library = *recorded = syn::LibraryRecorder::record (*instrument, toRecord, render, folder,
                                                            [&window] (const syn::LibraryRecorder::Progress& p)
         {
             window.setProgress (p.total > 0 ? (double) p.done / p.total : 0.0);
@@ -810,13 +917,18 @@ void MainComponent::recordLibrary()
         return error.isNotEmpty() ? report + " " + error
                                   : report + " Saved in " + folder.getFullPathName() + ".";
     },
-    [this, folder] (const juce::String& report)
+    [this, folder, recorded] (const juce::String& report)
     {
+        if (! recorded->samples.empty())
+        {
+            lastLibrary = *recorded;
+            lastLibraryFolder = folder;
+        }
         // The project goes next to the library, so it can be recorded again or extended later.
         if (folder.isDirectory())
             currentProject().save (folder.getChildFile (syn::LibraryRecorder::safeName (map.libraryName)
                                                         + syn::Project::fileExtension));
-        setStatus (report);
+        setStatus (report + (lastLibrary.has_value() ? " Try library plays it here." : ""));
         if (folder.isDirectory())
             folder.revealToUser();
     });
@@ -967,6 +1079,7 @@ void MainComponent::findNotes()
     syn::NoteRenderer::Settings render;
     render.sampleRate = sampleRate();
     render.blockSize = blockSize;
+    render.outputChannel = map.outputChannel;
     const int channel = selectedChannel();
     auto* instrument = plugin.get();
     auto found = std::make_shared<juce::Array<int>>();
