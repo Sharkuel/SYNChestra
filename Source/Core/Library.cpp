@@ -394,6 +394,13 @@ juce::String Library::toDecentSampler() const
 namespace
 {
 constexpr const char* floeBackgroundPath = "Images/floe-background.jpg";
+constexpr const char* floeIconPath = "Images/floe-icon.png";
+
+/** A colour as Floe writes them: 0xRRGGBBAA. */
+juce::String floeColour (juce::Colour c)
+{
+    return "0x" + juce::String::toHexString ((juce::int64) (((juce::uint32) c.getARGB() << 8) | c.getAlpha())).paddedLeft ('0', 8).toUpperCase();
+}
 
 /** A Lua string literal. */
 juce::String lua (const juce::String& text)
@@ -424,6 +431,19 @@ juce::String Library::toFloe (const juce::String& author) const
         << "    author = " << lua (author.isNotEmpty() ? author : juce::String ("SYNChestra")) << ",\n";
     if (map.backgroundImage.isNotEmpty())
         out << "    background_image_path = " << lua (floeBackgroundPath) << ",\n";
+    if (map.floeIcon.isNotEmpty())
+        out << "    icon_image_path = " << lua (floeIconPath) << ",\n";
+    const auto& vignette = map.panel.floeVignette;
+    const auto& tint = map.panel.floeTint;
+    if (! vignette.isTransparent() || ! tint.isTransparent())
+    {
+        out << "    background_overlay = {\n";
+        if (! vignette.isTransparent())
+            out << "        vignette = { colour = " << floeColour (vignette) << " },\n";
+        if (! tint.isTransparent())
+            out << "        panel_tint = { colour = " << floeColour (tint) << " },\n";
+        out << "    },\n";
+    }
     out << "})\n";
 
     juce::StringArray names;
@@ -502,6 +522,25 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
         jpeg.setQuality (0.9f);
         if (! out.openedOk() || ! jpeg.writeImageToStream (cover, out))
             return "Could not write " + juce::String (floeBackgroundPath) + ".";
+    }
+    if (floe && map.floeIcon.isNotEmpty())
+    {
+        // Floe wants a square icon: the middle of the picture, 256 pixels across.
+        const auto picture = juce::ImageFileFormat::loadFrom (juce::File (map.floeIcon));
+        if (! picture.isValid())
+            return "Could not read the Floe icon " + map.floeIcon + ".";
+        juce::Image icon (juce::Image::ARGB, 256, 256, true);
+        {
+            juce::Graphics g (icon);
+            g.drawImage (picture, icon.getBounds().toFloat(), juce::RectanglePlacement::fillDestination);
+        }
+        const auto file = folder.getChildFile (floeIconPath);
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::FileOutputStream out (file);
+        juce::PNGImageFormat png;
+        if (! out.openedOk() || ! png.writeImageToStream (icon, out))
+            return "Could not write " + juce::String (floeIconPath) + ".";
     }
     if (decentSampler && map.backgroundImage.isNotEmpty())
     {

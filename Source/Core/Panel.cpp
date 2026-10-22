@@ -124,6 +124,8 @@ juce::ValueTree Panel::toValueTree() const
     t.setProperty ("background", background.toString(), nullptr);
     t.setProperty ("textColour", textColour.toString(), nullptr);
     t.setProperty ("knobColour", knobColour.toString(), nullptr);
+    t.setProperty ("floeVignette", floeVignette.toString(), nullptr);
+    t.setProperty ("floeTint", floeTint.toString(), nullptr);
     for (const auto& c : controls)
         t.appendChild (c.toValueTree(), nullptr);
     return t;
@@ -137,6 +139,8 @@ Panel Panel::fromValueTree (const juce::ValueTree& t)
     p.background = juce::Colour::fromString (t.getProperty ("background", p.background.toString()).toString());
     p.textColour = juce::Colour::fromString (t.getProperty ("textColour", p.textColour.toString()).toString());
     p.knobColour = juce::Colour::fromString (t.getProperty ("knobColour", p.knobColour.toString()).toString());
+    p.floeVignette = juce::Colour::fromString (t.getProperty ("floeVignette", p.floeVignette.toString()).toString());
+    p.floeTint = juce::Colour::fromString (t.getProperty ("floeTint", p.floeTint.toString()).toString());
     for (const auto& child : t)
         if (child.hasType ("Control"))
             p.controls.push_back (PanelControl::fromValueTree (child));

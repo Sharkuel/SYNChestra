@@ -37,6 +37,8 @@ struct Panel
     juce::Colour background { 0xFF22282E };   // under the picture, or the whole panel without one
     juce::Colour textColour { 0xFFFFFFFF };
     juce::Colour knobColour { 0xFFE8A33D };   // a knob's filled arc
+    juce::Colour floeVignette { 0x00000000 };   // Floe darkens its picture's edges with this; clear for none
+    juce::Colour floeTint { 0x00000000 };       // and tints its panels with this
     std::vector<PanelControl> controls;       // empty: the standard layout
 
     /** The controls written: these, or the standard layout for a library with or without effect

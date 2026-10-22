@@ -94,6 +94,11 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    panel's background picture becomes Floe's background. Release times and one-shots are set on
    Floe's own panel.
 
+   Floe always shows its own controls, so a Floe library can only change Floe's look. In the panel
+   editor, **Floe...** picks an icon for Floe's library list (cropped square, `Images/floe-icon.png`),
+   a vignette colour that darkens the background picture's edges and a tint over Floe's panels;
+   their see-through (alpha) slider sets how strong they are, so start low.
+
    **Try library** then plays what you just recorded from the on-screen keyboard and your MIDI
    inputs, the way a sampler would (key and velocity ranges, round robins, loops, release,
    key-up sounds and keyswitches), so you can hear it before opening it elsewhere. Click it again

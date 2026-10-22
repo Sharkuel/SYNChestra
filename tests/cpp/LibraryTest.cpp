@@ -282,11 +282,16 @@ int main (int argc, char* argv[])
     }
     auto withPicture = library;
     withPicture.map.backgroundImage = picture.getFullPathName();
+    withPicture.map.floeIcon = picture.getFullPathName();
+    withPicture.map.panel.floeVignette = juce::Colour (0x66000000);
+    withPicture.map.panel.floeTint = juce::Colour (0x0D4FD6FF);
     check (withPicture.writePresets (folder, true, true, true).isEmpty(), "presets written");
     const auto background = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/background.png"));
     check (background.getWidth() == 812 && background.getHeight() == 375, "the background picture is scaled to the panel");
     const auto floeCover = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/floe-background.jpg"));
     check (floeCover.getWidth() == 1500 && floeCover.getHeight() == 844, "Floe gets a 16:9 background picture");
+    const auto floeIcon = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/floe-icon.png"));
+    check (floeIcon.getWidth() == 256 && floeIcon.getHeight() == 256, "Floe gets a square icon");
     const auto floe = folder.getChildFile ("Test Synth.floe.lua").loadFileAsString();
     check (countOf (floe, "floe.add_region(") == 13 && countOf (floe, "floe.new_instrument(") == 2,
            "the .floe.lua has a region per sample and an instrument per row");
@@ -294,6 +299,8 @@ int main (int argc, char* argv[])
            "the .floe.lua maps keys and velocities, ends exclusive");
     check (floe.contains ("round_robin_index = 1,") && floe.contains ("keytrack_requirement = \"never\"")
                && floe.contains ("background_image_path = \"Images/floe-background.jpg\"")
+               && floe.contains ("icon_image_path = \"Images/floe-icon.png\"")
+               && floe.contains ("vignette = { colour = 0x00000066 }") && floe.contains ("panel_tint = { colour = 0x4FD6FF0D }")
                && floe.trimEnd().endsWith ("return library"),
            "the .floe.lua plays round robins, the drum unpitched, over the picture");
     {
@@ -301,7 +308,12 @@ int main (int argc, char* argv[])
         twins.map.groups[1].name = twins.map.groups[0].name;
         check (twins.toFloe ("Me").contains ("name = \"" + twins.map.groups[0].name + " 2\""),
                "rows with the same name become differently named Floe instruments");
-        check (syn::Library().toFloe ({}).contains ("author = \"SYNChestra\""), "a Floe library always has an author");
+        check (syn::Library().toFloe ({}).contains ("author = \"SYNChestra\"") && ! syn::Library().toFloe ({}).contains ("background_overlay"),
+               "a Floe library always has an author, and Floe's own look unless colours are picked");
+        const auto kept = syn::SampleMap::fromValueTree (withPicture.map.toValueTree());
+        check (kept.floeIcon == withPicture.map.floeIcon && kept.panel.floeTint == withPicture.map.panel.floeTint
+                   && kept.panel.floeVignette == withPicture.map.panel.floeVignette,
+               "the Floe icon and colours are saved with the project");
     }
     const auto sfz = folder.getChildFile ("Test Synth.sfz").loadFileAsString();
     check (countOf (sfz, "<region>") == 13, "the .sfz has a region per sample");
