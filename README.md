@@ -118,6 +118,18 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    Volume and Release knobs (CC7 and CC72) under the names given in the editor, which SFZ
    players list.
 
+**Several sounds in one library.** To record many of a plugin's sounds in one go (all of a
+Kontakt library's instruments, say), set up the rows for the first one, then press **Add sound**:
+SYNChestra keeps the plugin's settings under the name you give, and a **Sound** column shows
+which sound each row records. Pick the next sound in the plugin and press **Add sound** again;
+its rows start as copies of the last sound's, to change as you like. **Record library** then
+switches the plugin to each sound in turn, waits until it has loaded (until its middle note
+plays the same twice running, up to three minutes) and records its rows into
+`Samples/<sound>/`. Decent Sampler and SFZ get a preset per sound (`<Library> - <Sound>`), Floe
+one library with an instrument per sound, and **Try library** plays the selected row's sound.
+Click a row's sound to switch the plugin to it (for Listen, Measure and Find notes), rename it,
+remove it with its rows, or move the row to another sound. Sounds are saved with the project.
+
 **Projects.** **Project... > Save project** writes a `.synchestra` file with the rows, the
 plugin and the plugin's own settings (the patch or kit picked in it). **Open project** brings
 them all back, loads the plugin with that sound and opens its window, ready to record again or

@@ -11,7 +11,9 @@ namespace
     0.2 s. The left side is louder than the right, so the test can tell stereo was kept.
     Notes from 100 up are plucks: they die away over about 3.5 s and ignore note-off.
     Soft notes (velocity 40 and under) sound brighter, with a third harmonic; louder ones are
-    the same sound, only louder. C1 and C#1 (24, 25) are keyswitches, silent: after C#1 notes play at a quarter of the level, until C1. */
+    the same sound, only louder. C1 and C#1 (24, 25) are keyswitches, silent: after C#1 notes play at a quarter of the level, until C1.
+    Its state is a patch number: patch 2 plays an octave up. A new state takes 150 blocks to "load",
+    silent meanwhile, like a big Kontakt instrument. */
 class FakeSynth final : public juce::AudioPluginInstance
 {
 public:
@@ -36,13 +38,28 @@ public:
     void setCurrentProgram (int) override {}
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
-    void getStateInformation (juce::MemoryBlock& state) override { state.replaceAll ("patch 7", 7); }
-    void setStateInformation (const void*, int) override {}
+    void getStateInformation (juce::MemoryBlock& state) override
+    {
+        const auto text = "patch " + juce::String (patch);
+        state.replaceAll (text.toRawUTF8(), text.getNumBytesAsUTF8());
+    }
+    void setStateInformation (const void* data, int size) override
+    {
+        patch = juce::String::fromUTF8 ((const char*) data, size).fromFirstOccurrenceOf ("patch ", false, false).getIntValue();
+        loading = 150;
+    }
+    int patch = 7;
 
     using AudioPluginInstance::processBlock;
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
     {
         buffer.clear();
+        if (loading > 0)
+        {
+            --loading;
+            midi.clear();
+            return;
+        }
         int pos = 0;
         auto render = [&] (int end)
         {
@@ -74,7 +91,7 @@ public:
             if (msg.isNoteOn() && msg.getNoteNumber() != 61)   // C#4 plays nothing
             {
                 level = msg.getFloatVelocity() * (soft ? 0.125 : 0.5);
-                frequency = juce::MidiMessage::getMidiNoteInHertz (msg.getNoteNumber());
+                frequency = juce::MidiMessage::getMidiNoteInHertz (msg.getNoteNumber()) * (patch == 2 ? 2.0 : 1.0);
                 held = true;
                 pluck = msg.getNoteNumber() >= 100;
                 bright = msg.getVelocity() <= 40;
@@ -90,6 +107,7 @@ public:
 
 private:
     double rate = 48000.0, level = 0.0, phase = 0.0, frequency = 440.0;
+    int loading = 0;
     bool held = false, pluck = false, soft = false, bright = false;
 };
 
@@ -626,6 +644,68 @@ int main (int argc, char* argv[])
                                                        [] (const syn::LibraryRecorder::Progress& p) { return p.done < 3; },
                                                        stopped);
     check (partial.samples.size() == 3 && stopped.startsWith ("Stopped after 3"), "a cancelled run keeps its recordings");
+
+    // Several of the plugin's sounds in one library: the plugin is switched to each, and waited for.
+    {
+        syn::SampleMap two;
+        two.libraryName = "Two Sounds";
+        two.sounds.push_back ({ "Low", juce::MemoryBlock ("patch 1", 7) });
+        two.sounds.push_back ({ "High", juce::MemoryBlock ("patch 2", 7) });
+        for (int s = 0; s < 2; ++s)
+        {
+            auto g = syn::Group::keys();
+            g.lowNote = g.highNote = 69;
+            g.layers = 1;
+            g.holdSeconds = 0.3;
+            g.loop = false;
+            g.sound = s;
+            two.groups.push_back (g);
+        }
+        const auto back = syn::SampleMap::fromValueTree (two.toValueTree());
+        check (back.sounds.size() == 2 && back.sounds[1].name == "High" && back.sounds[1].state == two.sounds[1].state
+                   && back.groups[1].sound == 1,
+               "the sounds and each row's sound are saved");
+
+        const auto twoFolder = folder.getSiblingFile ("Two Sounds");
+        juce::String twoReport;
+        const auto lib = syn::LibraryRecorder::record (synth, two, {}, twoFolder, nullptr, twoReport);
+        check (lib.samples.size() == 2 && lib.samples[0].path.startsWith ("Samples/Low/Keys/")
+                   && lib.samples[1].path.startsWith ("Samples/High/Keys/"),
+               "each sound records into a folder of its own, after it loaded (" + twoReport + ")");
+        if (lib.samples.size() == 2)
+        {
+            // Count zero crossings: High plays an octave up.
+            auto crossings = [&] (const syn::Sample& s)
+            {
+                std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (twoFolder.getChildFile (s.path)) };
+                if (reader == nullptr)
+                    return 0;
+                juce::AudioBuffer<float> audio (2, 4800);
+                reader->read (&audio, 0, 4800, 0, true, true);
+                int n = 0;
+                for (int i = 1; i < 4800; ++i)
+                    n += (audio.getSample (0, i - 1) < 0.0f) != (audio.getSample (0, i) < 0.0f);
+                return n;
+            };
+            const int low = crossings (lib.samples[0]), high = crossings (lib.samples[1]);
+            check (high > low * 3 / 2, "the plugin plays each row's sound (" + juce::String (low) + " vs " + juce::String (high) + " crossings)");
+        }
+        check (lib.writePresets (twoFolder, true, true, true).isEmpty()
+                   && twoFolder.getChildFile ("Two Sounds - Low.dspreset").existsAsFile()
+                   && twoFolder.getChildFile ("Two Sounds - High.sfz").existsAsFile()
+                   && ! twoFolder.getChildFile ("Two Sounds.sfz").existsAsFile(),
+               "Decent Sampler and SFZ get a preset per sound");
+        const auto twoFloe = twoFolder.getChildFile ("Two Sounds.floe.lua").loadFileAsString();
+        check (twoFloe.contains ("name = \"Low\"") && twoFloe.contains ("name = \"High\""), "Floe gets an instrument per sound, named after it");
+        check (countOf (twoFolder.getChildFile ("Two Sounds - High.sfz").loadFileAsString(), "<region>") == 1,
+               "a sound's preset holds only its own rows");
+
+        syn::NoteRenderer renderer (synth, {});
+        int asked = 0;
+        check (! syn::LibraryRecorder::switchSound (synth, two.sounds[0], renderer, two.groups[0],
+                                                    [&asked] { return ++asked < 2; }, 60.0, 10),
+               "waiting for a sound stops when cancelled");
+    }
 
     std::cout << (failures == 0 ? "All checks passed." : juce::String (failures) + " checks FAILED.") << std::endl;
     return failures == 0 ? 0 : 1;

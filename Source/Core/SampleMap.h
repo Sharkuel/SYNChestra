@@ -23,6 +23,7 @@ struct Group
     bool releaseSamples = false;       // also keep the sound after key-up, played by the sampler when a key is let go
     juce::String keyswitch;            // sent before each note to pick an articulation: a note ("C0") or a CC ("CC32=10")
     int midiChannel = 1;
+    int sound = -1;                    // the map's sound the plugin is switched to for this row; -1 plays it as it is
 
     /** The notes recorded, lowest first: lowNote, every step above it, and always highNote. */
     juce::Array<int> sampledNotes() const;
@@ -61,11 +62,20 @@ struct Group
     static std::vector<Group> fromSoundingNotes (const juce::Array<int>& sorted, bool drums, int midiChannel);
 };
 
+/** A sound picked in the plugin (a Kontakt instrument, a patch), kept as the plugin's own save of
+    its settings so a library can record several sounds in one go. */
+struct Sound
+{
+    juce::String name;
+    juce::MemoryBlock state;
+};
+
 /** Everything a library is recorded from. */
 struct SampleMap
 {
     juce::String libraryName = "My Library";
     std::vector<Group> groups;
+    std::vector<Sound> sounds;       // the rows' sounds, when they use more than the plugin's current one
     bool skipSameLayers = true;      // leave out a velocity layer that sounds like the louder one, only quieter
     bool effects = true;             // filter, chorus, delay and reverb knobs on the Decent Sampler panel
     juce::String backgroundImage;    // full path of a picture for the Decent Sampler panel, or empty
@@ -74,6 +84,9 @@ struct SampleMap
     int outputChannel = 0;           // the plugin output recorded: the first channel of a stereo pair, 0 the main one
 
     int totalRecordings() const;
+
+    /** The sound a row plays, or nullptr for the plugin as it is. */
+    const Sound* soundOf (const Group&) const;
 
     juce::ValueTree toValueTree() const;
     static SampleMap fromValueTree (const juce::ValueTree&);

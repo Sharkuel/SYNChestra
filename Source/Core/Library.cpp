@@ -43,6 +43,39 @@ std::vector<int> Library::articulationRows() const
     return rows;
 }
 
+Library Library::forSound (int sound) const
+{
+    Library part;
+    part.map = map;
+    part.map.groups.clear();
+    std::map<int, int> newIndex;
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+        if (map.groups[(size_t) g].sound == sound)
+        {
+            newIndex[g] = (int) part.map.groups.size();
+            part.map.groups.push_back (map.groups[(size_t) g]);
+        }
+    for (auto s : samples)
+        if (newIndex.count (s.group) > 0)
+        {
+            s.group = newIndex[s.group];
+            part.samples.push_back (s);
+        }
+    if (sound >= 0 && sound < (int) map.sounds.size())
+        part.map.libraryName = map.libraryName + " - " + map.sounds[(size_t) sound].name;
+    return part;
+}
+
+std::vector<int> Library::soundsRecorded() const
+{
+    std::vector<int> sounds;
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+        if (std::find (sounds.begin(), sounds.end(), map.groups[(size_t) g].sound) == sounds.end()
+            && ! takesOf (samples, g).empty())
+            sounds.push_back (map.groups[(size_t) g].sound);
+    return sounds;
+}
+
 juce::String Library::toSfz() const
 {
     // Rows with a keyswitch are articulations: the sampler plays the one whose switch came last.
@@ -453,10 +486,19 @@ juce::String Library::toFloe (const juce::String& author) const
         const auto sets = takesOf (samples, g);
         if (sets.empty())
             continue;
-        // Instrument names must differ within a library.
-        auto name = group.name.trim().isNotEmpty() ? group.name.trim() : juce::String ("Instrument");
+        // Named after the row, or its sound; instrument names must differ within a library.
+        auto base = group.name.trim().isNotEmpty() ? group.name.trim() : juce::String ("Instrument");
+        if (const auto* sound = map.soundOf (group))
+        {
+            int rowsOfSound = 0;
+            for (int other = 0; other < (int) map.groups.size(); ++other)
+                if (map.groups[(size_t) other].sound == group.sound && ! takesOf (samples, other).empty())
+                    ++rowsOfSound;
+            base = rowsOfSound > 1 ? sound->name + " " + base : sound->name;
+        }
+        auto name = base;
         for (int n = 2; names.contains (name, true); ++n)
-            name = group.name.trim() + " " + juce::String (n);
+            name = base + " " + juce::String (n);
         names.add (name);
 
         // The waveform shown on Floe's panel: a loud take from the middle of the row.
@@ -561,10 +603,17 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
         if (! out.openedOk() || ! png.writeImageToStream (panel, out))
             return "Could not write " + juce::String (backgroundPath) + ".";
     }
-    if (sfz && ! folder.getChildFile (name + ".sfz").replaceWithText (toSfz()))
-        return "Could not write " + name + ".sfz.";
-    if (decentSampler && ! folder.getChildFile (name + ".dspreset").replaceWithText (toDecentSampler()))
-        return "Could not write " + name + ".dspreset.";
+    // Decent Sampler and SFZ get a preset per sound, all sharing the Samples folder.
+    const auto sounds = soundsRecorded();
+    for (const int sound : sounds)
+    {
+        const auto part = forSound (sound);
+        const auto partName = LibraryRecorder::safeName (part.map.libraryName);
+        if (sfz && ! folder.getChildFile (partName + ".sfz").replaceWithText (part.toSfz()))
+            return "Could not write " + partName + ".sfz.";
+        if (decentSampler && ! folder.getChildFile (partName + ".dspreset").replaceWithText (part.toDecentSampler()))
+            return "Could not write " + partName + ".dspreset.";
+    }
     if (floe && ! folder.getChildFile (name + ".floe.lua").replaceWithText (toFloe (juce::SystemStats::getFullUserName())))
         return "Could not write " + name + ".floe.lua.";
     return {};
@@ -624,6 +673,36 @@ LibraryRecorder::Timing LibraryRecorder::measureTiming (juce::AudioPluginInstanc
         t.hold = std::ceil (t.ringSeconds * 10.0) / 10.0;   // hold until it has died away by itself
     t.release = std::round (t.release * 100.0) / 100.0;
     return t;
+}
+
+bool LibraryRecorder::switchSound (juce::AudioPluginInstance& plugin, const Sound& sound, NoteRenderer& renderer,
+                                   const Group& group, std::function<bool()> keepGoing, double maxSeconds,
+                                   int checkEveryMs)
+{
+    {
+        const juce::ScopedLock lock (plugin.getCallbackLock());
+        plugin.setStateInformation (sound.state.getData(), (int) sound.state.getSize());
+    }
+    // Ready once the note plays, and plays the same twice running: half-loaded samples come out
+    // missing or quieter.
+    const auto notes = group.sampledNotes();
+    const int note = notes.isEmpty() ? group.lowNote : notes[notes.size() / 2];
+    const auto started = juce::Time::getMillisecondCounterHiRes();
+    double lastDb = -1000.0;
+    while (juce::Time::getMillisecondCounterHiRes() - started < maxSeconds * 1000.0)
+    {
+        if (keepGoing && ! keepGoing())
+            return false;
+        const auto audio = renderer.render (note, 100, 0.2, group.midiChannel);
+        double db = -1000.0;
+        if (audio.getNumSamples() > 0)
+            db = juce::Decibels::gainToDecibels ((double) audio.getRMSLevel (0, 0, audio.getNumSamples()), -1000.0);
+        if (db > -900.0 && std::abs (db - lastDb) < 1.0)
+            return true;
+        lastDb = db;
+        juce::Thread::sleep (checkEveryMs);
+    }
+    return false;
 }
 
 bool LibraryRecorder::soundsTheSame (const juce::AudioBuffer<float>& louder, const juce::AudioBuffer<float>& softer,
@@ -726,6 +805,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
     progress.total = map.totalRecordings();
     juce::StringArray silent, failed;
     int looped = 0, sameLayers = 0;
+    int soundInPlugin = -2;   // the map's sound the plugin is set to: none of them yet
 
     for (int g = 0; g < (int) map.groups.size(); ++g)
     {
@@ -735,8 +815,26 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
         const auto notes = group.sampledNotes();
         const auto velocities = group.velocities();
         const int takes = juce::jmax (1, group.roundRobins);
-        const auto groupFolder = "Samples/" + safeName (group.name);
+        const auto* sound = map.soundOf (group);
+        const auto groupFolder = "Samples/" + (sound != nullptr ? safeName (sound->name) + "/" : juce::String())
+                                 + safeName (group.name);
         renderer.setSwitch (group.switchMessages());
+        if (sound != nullptr && group.sound != soundInPlugin)
+        {
+            progress.current = "Loading " + sound->name;
+            const auto keepGoing = [&] { return ! onProgress || onProgress (progress); };
+            if (! switchSound (plugin, *sound, renderer, group, keepGoing))
+            {
+                if (! keepGoing())
+                {
+                    report = "Stopped after " + juce::String (progress.done) + " of "
+                             + juce::String (progress.total) + " recordings.";
+                    return library;
+                }
+                silent.add (sound->name + " (never played)");
+            }
+            soundInPlugin = group.sound;
+        }
         for (int n = 0; n < notes.size(); ++n)
         {
             // The last layer kept for this note: a softer one that sounds just like it is left out.
