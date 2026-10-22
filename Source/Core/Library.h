@@ -38,8 +38,11 @@ struct Library
     /** <Library>.dspreset, for Decent Sampler. */
     juce::String toDecentSampler() const;
 
+    /** <Library>.floe.lua, for Floe: one Floe instrument per row, by the given author. */
+    juce::String toFloe (const juce::String& author) const;
+
     /** Writes the files asked for next to the Samples folder. Returns an error, or empty. */
-    juce::String writePresets (const juce::File& folder, bool sfz, bool decentSampler) const;
+    juce::String writePresets (const juce::File& folder, bool sfz, bool decentSampler, bool floe = false) const;
 };
 
 /** Records a SampleMap from a plugin into <root>/<library>/Samples/<group>/ as 24-bit stereo WAVs. */

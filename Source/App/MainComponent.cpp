@@ -104,7 +104,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &libraryName, (juce::Component*) &addKeysButton,
                                 (juce::Component*) &addDrumButton, (juce::Component*) &removeButton,
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
-                                (juce::Component*) &decentSampler, (juce::Component*) &sfz,
+                                (juce::Component*) &decentSampler, (juce::Component*) &sfz, (juce::Component*) &floe,
                                 (juce::Component*) &effectKnobs, (juce::Component*) &panelButton,
                                 (juce::Component*) &skipSameLayers, (juce::Component*) &projectButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
@@ -181,6 +181,11 @@ MainComponent::MainComponent()
     sfz.setToggleState (settings->getBoolValue ("writeSfz", true), juce::dontSendNotification);
     decentSampler.onClick = [this] { settings->setValue ("writeDecentSampler", decentSampler.getToggleState()); };
     sfz.onClick = [this] { settings->setValue ("writeSfz", sfz.getToggleState()); };
+    floe.setToggleState (settings->getBoolValue ("writeFloe", false), juce::dontSendNotification);
+    floe.onClick = [this] { settings->setValue ("writeFloe", floe.getToggleState()); };
+    floe.setTooltip ("Also writes a .floe.lua for Floe (floe.audio), one Floe instrument per row. Add the folder "
+                     "you save to as a library folder in Floe's settings. Floe has no keyswitches, so pick a "
+                     "row in Floe's instrument list instead.");
 
     rateChoice.addItem ("44.1 kHz", 44100);
     rateChoice.addItem ("48 kHz", 48000);
@@ -329,9 +334,10 @@ void MainComponent::resized()
     area.removeFromBottom (gap);
     row = area.removeFromBottom (rowHeight);
     decentSampler.setBounds (row.removeFromLeft (210));
-    sfz.setBounds (row.removeFromLeft (110));
+    sfz.setBounds (row.removeFromLeft (100));
+    floe.setBounds (row.removeFromLeft (75));
     effectKnobs.setBounds (row.removeFromLeft (120));
-    panelButton.setBounds (row.removeFromLeft (170));
+    panelButton.setBounds (row.removeFromLeft (130));
     row.removeFromLeft (gap * 2);
     rateChoice.setBounds (row.removeFromLeft (110));
     row.removeFromLeft (gap * 2);
@@ -888,14 +894,14 @@ void MainComponent::recordLibrary()
         return setStatus ("Load a plugin first.");
     if (map.totalRecordings() == 0)
         return setStatus ("Tick Record on at least one row.");
-    if (! decentSampler.getToggleState() && ! sfz.getToggleState())
-        return setStatus ("Tick Decent Sampler, SFZ or both, so the library has a preset to open.");
-    if (decentSampler.getToggleState() && map.backgroundImage.isNotEmpty() && ! juce::File (map.backgroundImage).existsAsFile())
+    if (! decentSampler.getToggleState() && ! sfz.getToggleState() && ! floe.getToggleState())
+        return setStatus ("Tick Decent Sampler, SFZ or Floe, so the library has a preset to open.");
+    if ((decentSampler.getToggleState() || floe.getToggleState()) && map.backgroundImage.isNotEmpty() && ! juce::File (map.backgroundImage).existsAsFile())
         return setStatus ("The background picture " + map.backgroundImage + " is gone. Pick another, or No picture.");
 
     const auto folder = outputFolder().getChildFile (syn::LibraryRecorder::safeName (map.libraryName));
     const auto toRecord = map;
-    const bool writeDs = decentSampler.getToggleState(), writeSfz = sfz.getToggleState();
+    const bool writeDs = decentSampler.getToggleState(), writeSfz = sfz.getToggleState(), writeFloe = floe.getToggleState();
     syn::NoteRenderer::Settings render;
     render.sampleRate = sampleRate();
     render.blockSize = blockSize;
@@ -904,7 +910,7 @@ void MainComponent::recordLibrary()
     auto recorded = std::make_shared<syn::Library>();
     setPreview (false);
 
-    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, writeDs, writeSfz, recorded]
+    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, writeDs, writeSfz, writeFloe, recorded]
                                             (juce::ThreadWithProgressWindow& window)
     {
         juce::String report;
@@ -917,7 +923,7 @@ void MainComponent::recordLibrary()
         }, report);
         if (library.samples.empty())
             return report;
-        const auto error = library.writePresets (folder, writeSfz, writeDs);
+        const auto error = library.writePresets (folder, writeSfz, writeDs, writeFloe);
         return error.isNotEmpty() ? report + " " + error
                                   : report + " Saved in " + folder.getFullPathName() + ".";
     },
