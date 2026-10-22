@@ -494,7 +494,8 @@ void PanelEditor::chooseColour (juce::Colour& colour, juce::Component& near, boo
                               | (alpha ? ColourSelector::showAlphaChannel : 0)),
               colour (c), onMove (std::move (moved))
         {
-            setCurrentColour (c, juce::dontSendNotification);
+            // A colour that's off starts a quarter strong, so the first move shows.
+            setCurrentColour (alpha && c.isTransparent() ? juce::Colour (0x40000000) : c, juce::dontSendNotification);
             setSize (300, alpha ? 350 : 320);
             addChangeListener (this);
         }
@@ -507,7 +508,9 @@ void PanelEditor::chooseColour (juce::Colour& colour, juce::Component& near, boo
         std::function<void()> onMove;
     };
     auto picker = std::make_unique<Picker> (colour, withAlpha, [this] { changed(); });
-    juce::CallOutBox::launchAsynchronously (std::move (picker), near.getScreenBounds(), nullptr);
+    // Inside this window rather than on the desktop: some Linux desktops put a separate popup
+    // window behind the panel window, where it can't be seen.
+    juce::CallOutBox::launchAsynchronously (std::move (picker), getLocalArea (&near, near.getLocalBounds()), this);
 }
 
 void PanelEditor::chooseBackground()
