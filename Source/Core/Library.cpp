@@ -391,9 +391,118 @@ juce::String Library::toDecentSampler() const
     return root.toString();
 }
 
-juce::String Library::writePresets (const juce::File& folder, bool sfz, bool decentSampler) const
+namespace
+{
+constexpr const char* floeBackgroundPath = "Images/floe-background.jpg";
+
+/** A Lua string literal. */
+juce::String lua (const juce::String& text)
+{
+    return "\"" + text.replace ("\\", "\\\\").replace ("\"", "\\\"").replace ("\n", "\\n") + "\"";
+}
+
+/** A MIDI velocity range (inclusive, 1-127) on Floe's 0-1000 scale (end exclusive), as Floe's
+    own midi_range_to_thousand_range does it, so neighbouring layers meet without a gap. */
+juce::Range<int> floeVelocities (juce::Range<int> midi)
+{
+    const double lo = juce::jmax (1, midi.getStart()) - 1, hi = midi.getEnd() - 1;
+    const int start = juce::roundToInt (lo / 126.0 * 999.0);
+    const int end = juce::roundToInt (juce::jmin ((hi + 1.0) / 126.0 * 999.0, 1000.0));
+    return { start, juce::jmax (start + 1, end) };
+}
+} // namespace
+
+juce::String Library::toFloe (const juce::String& author) const
+{
+    // Floe has no keyswitches, so every row is an instrument of its own, picked in Floe's
+    // instrument browser. Release times and one-shots are set on Floe's own panel.
+    juce::String out;
+    out << "-- " << map.libraryName << ", recorded with SYNChestra\n\n";
+    out << "local library = floe.new_library({\n"
+        << "    name = " << lua (map.libraryName) << ",\n"
+        << "    tagline = " << lua ("Recorded with SYNChestra") << ",\n"
+        << "    author = " << lua (author.isNotEmpty() ? author : juce::String ("SYNChestra")) << ",\n";
+    if (map.backgroundImage.isNotEmpty())
+        out << "    background_image_path = " << lua (floeBackgroundPath) << ",\n";
+    out << "})\n";
+
+    juce::StringArray names;
+    for (int g = 0; g < (int) map.groups.size(); ++g)
+    {
+        const auto& group = map.groups[(size_t) g];
+        const auto sets = takesOf (samples, g);
+        if (sets.empty())
+            continue;
+        // Instrument names must differ within a library.
+        auto name = group.name.trim().isNotEmpty() ? group.name.trim() : juce::String ("Instrument");
+        for (int n = 2; names.contains (name, true); ++n)
+            name = group.name.trim() + " " + juce::String (n);
+        names.add (name);
+
+        // The waveform shown on Floe's panel: a loud take from the middle of the row.
+        const auto& shown = *std::next (sets.begin(), (int) sets.size() / 2)->second.front();
+        out << "\ndo\n    local instrument = floe.new_instrument(library, {\n"
+            << "        name = " << lua (name) << ",\n"
+            << "        waveform_audio_path = " << lua (shown.path) << ",\n"
+            << "    })\n";
+
+        auto region = [&] (const Sample& s, bool keyUp, int takes)
+        {
+            const auto vel = floeVelocities (s.velocities);
+            out << "    floe.add_region(instrument, {\n"
+                << "        path = " << lua (s.path) << ",\n"
+                << "        root_key = " << s.rootNote << ",\n"
+                << "        trigger_criteria = {\n";
+            if (keyUp)
+                out << "            trigger_event = \"note-off\",\n";
+            out << "            key_range = { " << s.keys.getStart() << ", " << s.keys.getEnd() + 1 << " },\n"
+                << "            velocity_range_high_resolution = { " << vel.getStart() << ", " << vel.getEnd() << " },\n";
+            if (takes > 1)
+                out << "            round_robin_index = " << s.roundRobin - 1 << ",\n"
+                    << "            round_robin_sequencing_group = " << lua (juce::String (takes) + " takes") << ",\n";
+            out << "        },\n";
+            if (! keyUp && s.loops())
+                out << "        loop = { builtin_loop = { start_frame = " << s.loopStart << ", end_frame = " << s.loopEnd + 1
+                    << ", crossfade = 0 } },\n";
+            if (! group.pitched)
+                out << "        playback = { keytrack_requirement = \"never\" },\n";
+            out << "    })\n";
+        };
+        for (const auto& [key, takes] : sets)
+            for (const auto* s : takes)
+                region (*s, false, (int) takes.size());
+        // The key-up sounds, which Floe plays to their end when a key is let go.
+        for (const auto& [key, takes] : takesOf (samples, g, true))
+            region (*takes.front(), true, 1);
+        out << "end\n";
+    }
+    out << "\nreturn library\n";
+    return out;
+}
+
+juce::String Library::writePresets (const juce::File& folder, bool sfz, bool decentSampler, bool floe) const
 {
     const auto name = LibraryRecorder::safeName (map.libraryName);
+    if (floe && map.backgroundImage.isNotEmpty())
+    {
+        // Floe fills its window with the picture: about 16:9, 1500 pixels wide, as its docs suggest.
+        const auto picture = juce::ImageFileFormat::loadFrom (juce::File (map.backgroundImage));
+        if (! picture.isValid())
+            return "Could not read the background picture " + map.backgroundImage + ".";
+        juce::Image cover (juce::Image::RGB, 1500, 844, true);
+        {
+            juce::Graphics g (cover);
+            g.drawImage (picture, cover.getBounds().toFloat(), juce::RectanglePlacement::fillDestination);
+        }
+        const auto file = folder.getChildFile (floeBackgroundPath);
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::FileOutputStream out (file);
+        juce::JPEGImageFormat jpeg;
+        jpeg.setQuality (0.9f);
+        if (! out.openedOk() || ! jpeg.writeImageToStream (cover, out))
+            return "Could not write " + juce::String (floeBackgroundPath) + ".";
+    }
     if (decentSampler && map.backgroundImage.isNotEmpty())
     {
         // Scaled and cropped to fill the panel, so any picture fits.
@@ -417,6 +526,8 @@ juce::String Library::writePresets (const juce::File& folder, bool sfz, bool dec
         return "Could not write " + name + ".sfz.";
     if (decentSampler && ! folder.getChildFile (name + ".dspreset").replaceWithText (toDecentSampler()))
         return "Could not write " + name + ".dspreset.";
+    if (floe && ! folder.getChildFile (name + ".floe.lua").replaceWithText (toFloe (juce::SystemStats::getFullUserName())))
+        return "Could not write " + name + ".floe.lua.";
     return {};
 }
 

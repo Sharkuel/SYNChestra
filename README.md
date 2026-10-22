@@ -4,8 +4,9 @@
 
 Record your instrument plugins into sample libraries. SYNChestra hosts a VST3 (or AU/LV2)
 instrument, plays it note by note at several velocities, and saves the result as a
-**Decent Sampler** (`.dspreset`) and **SFZ** (`.sfz`) library: one set of recordings, two
-formats, ready to open in Decent Sampler, sforzando, Sfizz, TAL-Sampler and other SFZ players.
+**Decent Sampler** (`.dspreset`), **SFZ** (`.sfz`) and **Floe** (`.floe.lua`) library: one set
+of recordings, three formats, ready to open in Decent Sampler, [Floe](https://floe.audio),
+sforzando, Sfizz, TAL-Sampler and other SFZ players.
 
 The name is a tribute to Devin Townsend's *Synchestra*.
 
@@ -84,7 +85,14 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    louder recording covers its velocities, and the sampler plays it softer. Layers whose sound
    really changes (a brighter attack, a different articulation) are all kept.
 
-4. Tick **Decent Sampler**, **SFZ** or both, pick the sample rate, and press **Record library**.
+4. Tick **Decent Sampler**, **SFZ**, **Floe** or any mix, pick the sample rate, and press
+   **Record library**.
+
+   For **Floe**, add the folder you save to as a library folder in Floe's settings (Floe looks
+   through its subfolders). Each row becomes a Floe instrument of its own, since Floe has no
+   keyswitches; round robins, loops, unpitched drums and key-up sounds carry over, and the
+   panel's background picture becomes Floe's background. Release times and one-shots are set on
+   Floe's own panel.
 
    **Try library** then plays what you just recorded from the on-screen keyboard and your MIDI
    inputs, the way a sampler would (key and velocity ranges, round robins, loops, release,

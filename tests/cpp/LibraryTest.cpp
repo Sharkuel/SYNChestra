@@ -282,9 +282,27 @@ int main (int argc, char* argv[])
     }
     auto withPicture = library;
     withPicture.map.backgroundImage = picture.getFullPathName();
-    check (withPicture.writePresets (folder, true, true).isEmpty(), "presets written");
+    check (withPicture.writePresets (folder, true, true, true).isEmpty(), "presets written");
     const auto background = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/background.png"));
     check (background.getWidth() == 812 && background.getHeight() == 375, "the background picture is scaled to the panel");
+    const auto floeCover = juce::ImageFileFormat::loadFrom (folder.getChildFile ("Images/floe-background.jpg"));
+    check (floeCover.getWidth() == 1500 && floeCover.getHeight() == 844, "Floe gets a 16:9 background picture");
+    const auto floe = folder.getChildFile ("Test Synth.floe.lua").loadFileAsString();
+    check (countOf (floe, "floe.add_region(") == 13 && countOf (floe, "floe.new_instrument(") == 2,
+           "the .floe.lua has a region per sample and an instrument per row");
+    check (floe.contains ("key_range = { 57, 59 }") && floe.contains ("velocity_range_high_resolution = { 0, 507 }"),
+           "the .floe.lua maps keys and velocities, ends exclusive");
+    check (floe.contains ("round_robin_index = 1,") && floe.contains ("keytrack_requirement = \"never\"")
+               && floe.contains ("background_image_path = \"Images/floe-background.jpg\"")
+               && floe.trimEnd().endsWith ("return library"),
+           "the .floe.lua plays round robins, the drum unpitched, over the picture");
+    {
+        auto twins = library;
+        twins.map.groups[1].name = twins.map.groups[0].name;
+        check (twins.toFloe ("Me").contains ("name = \"" + twins.map.groups[0].name + " 2\""),
+               "rows with the same name become differently named Floe instruments");
+        check (syn::Library().toFloe ({}).contains ("author = \"SYNChestra\""), "a Floe library always has an author");
+    }
     const auto sfz = folder.getChildFile ("Test Synth.sfz").loadFileAsString();
     check (countOf (sfz, "<region>") == 13, "the .sfz has a region per sample");
     check (sfz.contains ("lokey=57 hikey=58 lovel=1 hivel=64 pitch_keycenter=57"), "the .sfz maps keys and velocities");
@@ -449,6 +467,9 @@ int main (int argc, char* argv[])
         const auto releaseSfz = lib.toSfz();
         check (countOf (releaseSfz, "trigger=release") == 4 && releaseSfz.contains ("ampeg_release=0.1"),
                "the .sfz plays release samples on key-up, and fades the held sound fast");
+        check (countOf (lib.toFloe ("Me"), "trigger_event = \"note-off\"") == 4
+                   && lib.writePresets (releaseFolder, false, false, true).isEmpty(),
+               "the .floe.lua plays release samples on key-up");
         const auto releaseDs = juce::parseXML (lib.toDecentSampler());
         auto* groups = releaseDs != nullptr ? releaseDs->getChildByName ("groups") : nullptr;
         check (groups != nullptr && groups->getNumChildElements() == 2
@@ -485,6 +506,8 @@ int main (int argc, char* argv[])
         const auto switchFolder = folder.getSiblingFile ("Switched");
         juce::String switchReport;
         const auto lib = syn::LibraryRecorder::record (synth, switched, {}, switchFolder, nullptr, switchReport);
+        check (countOf (lib.toFloe ("Me"), "floe.new_instrument(") == 2 && lib.writePresets (switchFolder, false, false, true).isEmpty(),
+               "each articulation is a Floe instrument of its own");
         float peaks[2] = {};
         for (int i = 0; i < 2 && i < (int) lib.samples.size(); ++i)
             if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (switchFolder.getChildFile (lib.samples[(size_t) i].path)) })
@@ -555,6 +578,10 @@ int main (int argc, char* argv[])
                    "the .sfz loops it");
             check (loops.toDecentSampler().contains ("loopEnabled=\"true\" loopStart=\"" + juce::String (s.loopStart)),
                    "the .dspreset loops it");
+            check (loops.toFloe ("Me").contains ("builtin_loop = { start_frame = " + juce::String (s.loopStart)
+                                                 + ", end_frame = " + juce::String (s.loopEnd + 1) + ", crossfade = 0 }")
+                       && loops.writePresets (loopFolder, false, false, true).isEmpty(),
+                   "the .floe.lua loops it, its end one past the last frame as Floe counts");
         }
     }
 
