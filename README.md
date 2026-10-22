@@ -97,7 +97,9 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    Floe always shows its own controls, so a Floe library can only change Floe's look. In the panel
    editor, **Floe...** picks an icon for Floe's library list (cropped square, `Images/floe-icon.png`),
    a vignette colour that darkens the background picture's edges and a tint over Floe's panels;
-   their see-through (alpha) slider sets how strong they are, so start low.
+   their see-through (alpha) slider sets how strong they are, so start low. The **Floe** button at
+   the editor's top right (or opening **Floe...**) shows roughly how Floe will look with them;
+   **Decent Sampler** goes back to the panel layout.
 
    **Try library** then plays what you just recorded from the on-screen keyboard and your MIDI
    inputs, the way a sampler would (key and velocity ranges, round robins, loops, release,

@@ -20,6 +20,7 @@ public:
 
 private:
     class Canvas;
+    class FloeView;
 
     std::vector<syn::PanelControl>& controls();   // the map's own, filled in from the standard layout on the first edit
     bool showsArticulations() const;
@@ -34,6 +35,7 @@ private:
     void chooseColour (juce::Colour& colour, juce::Component& near, bool withAlpha = false);
     void resetLayout();
     void showSelection();
+    void showFloeView (bool floe);
 
     syn::SampleMap& map;
     std::function<void()> onChange;
@@ -41,8 +43,13 @@ private:
     int selected = -1;
     juce::Image background;
     juce::String backgroundLoaded;
+    juce::Image icon;
+    juce::String iconLoaded;
 
     std::unique_ptr<Canvas> canvas;
+    std::unique_ptr<FloeView> floeView;
+    juce::TextButton dsViewButton { "Decent Sampler" }, floeViewButton { "Floe" };
+    juce::Label floeHelp;
     juce::TextButton addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." }, floeButton { "Floe..." },
         resetButton { "Standard layout" }, removeButton { "Remove" };
     juce::Label selectedName, labelCaption { {}, "Label" }, sizeCaption { {}, "Size" }, styleCaption { {}, "Style" }, help;
