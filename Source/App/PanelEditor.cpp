@@ -197,7 +197,7 @@ private:
 PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallback)
     : map (m), onChange (std::move (changeCallback)), canvas (std::make_unique<Canvas> (*this))
 {
-    for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &addButton, &backgroundButton, &coloursButton,
+    for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &addButton, &backgroundButton, &coloursButton, &floeButton,
                                                             &resetButton, &selectedName, &labelCaption, &labelText,
                                                             &sizeCaption, &size, &removeButton, &help,
                                                             &styleCaption, &style })
@@ -220,6 +220,10 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
     addButton.setTooltip ("Adds a knob that isn't on the panel yet, a line of text, or the articulation menu.");
     backgroundButton.onClick = [this] { chooseBackground(); };
     coloursButton.onClick = [this] { showColourMenu(); };
+    floeButton.onClick = [this] { showFloeMenu(); };
+    floeButton.setTooltip ("Floe libraries can't change Floe's panel, only its look: the background picture, an icon "
+                           "in Floe's library list, a vignette darkening the picture's edges and a tint over "
+                           "Floe's panels. Start with very see-through colours.");
     resetButton.onClick = [this] { resetLayout(); };
     resetButton.setTooltip ("Puts everything back where SYNChestra puts it: the title on top, the knobs along the bottom.");
     removeButton.onClick = [this]
@@ -432,23 +436,66 @@ void PanelEditor::showAddMenu()
 void PanelEditor::showColourMenu()
 {
     juce::PopupMenu menu;
-    menu.addItem ("Background colour...", [this] { chooseColour (map.panel.background, "Background"); });
-    menu.addItem ("Text colour...", [this] { chooseColour (map.panel.textColour, "Text"); });
-    menu.addItem ("Knob colour...", [this] { chooseColour (map.panel.knobColour, "Knob"); });
+    menu.addItem ("Background colour...", [this] { chooseColour (map.panel.background, coloursButton); });
+    menu.addItem ("Text colour...", [this] { chooseColour (map.panel.textColour, coloursButton); });
+    menu.addItem ("Knob colour...", [this] { chooseColour (map.panel.knobColour, coloursButton); });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (coloursButton));
 }
 
-void PanelEditor::chooseColour (juce::Colour& colour, const juce::String& what)
+void PanelEditor::showFloeMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem (map.floeIcon.isEmpty() ? "Icon..." : "Icon: " + juce::File (map.floeIcon).getFileName() + "...",
+                  [this] { chooseFloeIcon(); });
+    if (map.floeIcon.isNotEmpty())
+        menu.addItem ("No icon", [this]
+        {
+            map.floeIcon = {};
+            changed();
+        });
+    menu.addSeparator();
+    menu.addItem ("Vignette colour...", [this] { chooseColour (map.panel.floeVignette, floeButton, true); });
+    menu.addItem ("Panel tint colour...", [this] { chooseColour (map.panel.floeTint, floeButton, true); });
+    menu.addItem ("No vignette or tint", ! map.panel.floeVignette.isTransparent() || ! map.panel.floeTint.isTransparent(),
+                  false, [this]
+    {
+        map.panel.floeVignette = map.panel.floeTint = juce::Colour (0x00000000);
+        changed();
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (floeButton));
+}
+
+void PanelEditor::chooseFloeIcon()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Pick an icon for the library in Floe (square works best)",
+                                                   juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
+                                                   "*.png;*.jpg;*.jpeg");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        if (! juce::ImageFileFormat::loadFrom (file).isValid())
+            return juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Icon",
+                                                           "Can't read " + file.getFileName() + " as a picture.");
+        map.floeIcon = file.getFullPathName();
+        changed();
+    });
+}
+
+void PanelEditor::chooseColour (juce::Colour& colour, juce::Component& near, bool withAlpha)
 {
     /** A colour picker that sets the panel's colour as it moves. */
     struct Picker final : public juce::ColourSelector, private juce::ChangeListener
     {
-        Picker (juce::Colour& c, std::function<void()> moved)
-            : ColourSelector (ColourSelector::showColourAtTop | ColourSelector::showSliders | ColourSelector::showColourspace),
+        Picker (juce::Colour& c, bool alpha, std::function<void()> moved)
+            : ColourSelector (ColourSelector::showColourAtTop | ColourSelector::showSliders | ColourSelector::showColourspace
+                              | (alpha ? ColourSelector::showAlphaChannel : 0)),
               colour (c), onMove (std::move (moved))
         {
             setCurrentColour (c, juce::dontSendNotification);
-            setSize (300, 320);
+            setSize (300, alpha ? 350 : 320);
             addChangeListener (this);
         }
         void changeListenerCallback (juce::ChangeBroadcaster*) override
@@ -459,9 +506,8 @@ void PanelEditor::chooseColour (juce::Colour& colour, const juce::String& what)
         juce::Colour& colour;
         std::function<void()> onMove;
     };
-    juce::ignoreUnused (what);
-    auto picker = std::make_unique<Picker> (colour, [this] { changed(); });
-    juce::CallOutBox::launchAsynchronously (std::move (picker), coloursButton.getScreenBounds(), nullptr);
+    auto picker = std::make_unique<Picker> (colour, withAlpha, [this] { changed(); });
+    juce::CallOutBox::launchAsynchronously (std::move (picker), near.getScreenBounds(), nullptr);
 }
 
 void PanelEditor::chooseBackground()
@@ -517,7 +563,7 @@ void PanelEditor::resized()
 {
     auto area = getLocalBounds().reduced (margin);
     auto bar = area.removeFromTop (toolbarHeight - margin);
-    for (auto* b : { &addButton, &coloursButton })
+    for (auto* b : { &addButton, &coloursButton, &floeButton })
     {
         b->setBounds (bar.removeFromLeft (100));
         bar.removeFromLeft (8);

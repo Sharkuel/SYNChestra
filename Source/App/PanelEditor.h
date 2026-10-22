@@ -3,7 +3,8 @@
 #include "../Core/SampleMap.h"
 
 /** Lays out a library's Decent Sampler panel: drag the knobs, title, texts and articulation menu
-    where you want them, pick the colours and the background picture. Edits the map it's given
+    where you want them, pick the colours and the background picture, and the icon and colours
+    Floe shows with the picture. Edits the map it's given
     and calls onChange after each change. */
 class PanelEditor final : public juce::Component
 {
@@ -28,7 +29,9 @@ private:
     void showAddMenu();
     void showColourMenu();
     void chooseBackground();
-    void chooseColour (juce::Colour& colour, const juce::String& what);
+    void showFloeMenu();
+    void chooseFloeIcon();
+    void chooseColour (juce::Colour& colour, juce::Component& near, bool withAlpha = false);
     void resetLayout();
     void showSelection();
 
@@ -40,7 +43,7 @@ private:
     juce::String backgroundLoaded;
 
     std::unique_ptr<Canvas> canvas;
-    juce::TextButton addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." },
+    juce::TextButton addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." }, floeButton { "Floe..." },
         resetButton { "Standard layout" }, removeButton { "Remove" };
     juce::Label selectedName, labelCaption { {}, "Label" }, sizeCaption { {}, "Size" }, styleCaption { {}, "Style" }, help;
     juce::ComboBox style;
