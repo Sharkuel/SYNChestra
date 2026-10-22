@@ -32,6 +32,13 @@ struct Library
     /** The rows with recordings and a keyswitch: the library's articulations, in table order. */
     std::vector<int> articulationRows() const;
 
+    /** The rows of one sound (-1: the rows without one) and their samples, as a library of its own
+        named "<Library> - <Sound>". */
+    Library forSound (int sound) const;
+
+    /** The sounds with recordings, in table order: -1 for rows without one. */
+    std::vector<int> soundsRecorded() const;
+
     /** <Library>.sfz, for sforzando, Sfizz, TAL-Sampler and other SFZ players. */
     juce::String toSfz() const;
 
@@ -41,7 +48,8 @@ struct Library
     /** <Library>.floe.lua, for Floe: one Floe instrument per row, by the given author. */
     juce::String toFloe (const juce::String& author) const;
 
-    /** Writes the files asked for next to the Samples folder. Returns an error, or empty. */
+    /** Writes the files asked for next to the Samples folder: with several sounds, a .sfz and a
+        .dspreset for each, and one .floe.lua with all of them. Returns an error, or empty. */
     juce::String writePresets (const juce::File& folder, bool sfz, bool decentSampler, bool floe = false) const;
 };
 
@@ -82,6 +90,12 @@ public:
         only turned the volume down for the softer one. */
     static bool soundsTheSame (const juce::AudioBuffer<float>& louder, const juce::AudioBuffer<float>& softer,
                                double sampleRate);
+
+    /** Switches the plugin to a sound and waits until it plays the row's middle note steadily, as
+        big instruments (Kontakt's) load their samples in the background. keepGoing returns false
+        to stop. Returns false when stopped, or when it never played within maxSeconds. */
+    static bool switchSound (juce::AudioPluginInstance&, const Sound&, NoteRenderer&, const Group&,
+                             std::function<bool()> keepGoing, double maxSeconds = 180.0, int checkEveryMs = 1000);
 
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);

@@ -62,6 +62,8 @@ juce::ValueTree Group::toValueTree() const
     t.setProperty ("keyswitch", keyswitch, nullptr);
     t.setProperty ("releaseSamples", releaseSamples, nullptr);
     t.setProperty ("midiChannel", midiChannel, nullptr);
+    if (sound >= 0)
+        t.setProperty ("sound", sound, nullptr);
     return t;
 }
 
@@ -83,6 +85,7 @@ Group Group::fromValueTree (const juce::ValueTree& t)
     g.keyswitch = t.getProperty ("keyswitch", g.keyswitch);
     g.releaseSamples = t.getProperty ("releaseSamples", g.releaseSamples);
     g.midiChannel = t.getProperty ("midiChannel", g.midiChannel);
+    g.sound = t.getProperty ("sound", g.sound);
     return g;
 }
 
@@ -184,6 +187,11 @@ int SampleMap::totalRecordings() const
     return total;
 }
 
+const Sound* SampleMap::soundOf (const Group& g) const
+{
+    return g.sound >= 0 && g.sound < (int) sounds.size() ? &sounds[(size_t) g.sound] : nullptr;
+}
+
 juce::ValueTree SampleMap::toValueTree() const
 {
     juce::ValueTree t ("SampleMap");
@@ -194,6 +202,13 @@ juce::ValueTree SampleMap::toValueTree() const
     t.setProperty ("floeIcon", floeIcon, nullptr);
     t.setProperty ("outputChannel", outputChannel, nullptr);
     t.appendChild (panel.toValueTree(), nullptr);
+    for (const auto& s : sounds)
+    {
+        juce::ValueTree sound ("Sound");
+        sound.setProperty ("name", s.name, nullptr);
+        sound.setProperty ("state", s.state.toBase64Encoding(), nullptr);
+        t.appendChild (sound, nullptr);
+    }
     for (const auto& g : groups)
         t.appendChild (g.toValueTree(), nullptr);
     return t;
@@ -212,6 +227,16 @@ SampleMap SampleMap::fromValueTree (const juce::ValueTree& t)
     for (const auto& child : t)
         if (child.hasType ("Group"))
             m.groups.push_back (Group::fromValueTree (child));
+        else if (child.hasType ("Sound"))
+        {
+            Sound s;
+            s.name = child.getProperty ("name").toString();
+            s.state.fromBase64Encoding (child.getProperty ("state").toString());
+            m.sounds.push_back (std::move (s));
+        }
+    for (auto& g : m.groups)
+        if (g.sound >= (int) m.sounds.size())
+            g.sound = -1;
     return m;
 }
 

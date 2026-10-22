@@ -101,7 +101,7 @@ MainComponent::MainComponent()
     for (juce::Component* c : { (juce::Component*) &scanButton, (juce::Component*) &pluginSearch,
                                 (juce::Component*) &pluginChoice, (juce::Component*) &loadButton,
                                 (juce::Component*) &showButton, (juce::Component*) &nameLabel,
-                                (juce::Component*) &libraryName, (juce::Component*) &addKeysButton,
+                                (juce::Component*) &libraryName, (juce::Component*) &addKeysButton, (juce::Component*) &addSoundButton,
                                 (juce::Component*) &addDrumButton, (juce::Component*) &removeButton,
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz, (juce::Component*) &floe,
@@ -143,6 +143,11 @@ MainComponent::MainComponent()
     addDrumButton.onClick = [this] { addGroup (syn::Group::drum ("Drum", 38)); };
     addDrumButton.setTooltip ("Adds a single unpitched note that plays to its end: a drum, a hit or an effect.");
     removeButton.onClick = [this] { removeGroup(); };
+    addSoundButton.onClick = [this] { addSound(); };
+    addSoundButton.setTooltip ("Records several of the plugin's sounds into one library, such as all of a Kontakt "
+                               "library's instruments. Pick a sound in the plugin and press Add sound: the rows "
+                               "are kept for it. Then pick the next sound and press it again. Record library "
+                               "switches the plugin to each sound in turn, waiting for it to load.");
     findButton.onClick = [this] { findNotes(); };
     findButton.setTooltip ("Plays every key once on the selected row's MIDI channel and marks the ones that make a "
                            "sound on the keyboard below.");
@@ -156,6 +161,8 @@ MainComponent::MainComponent()
     auto& header = table.getHeader();
     header.addColumn ("Record", colOn, 56);
     header.addColumn ("Name", colName, 110);
+    header.addColumn ("Sound", colSound, 100);
+    header.setColumnVisible (colSound, false);
     header.addColumn ("Lowest", colLow, 64);
     header.addColumn ("Highest", colHigh, 64);
     header.addColumn ("Every", colStep, 56);
@@ -304,6 +311,8 @@ void MainComponent::resized()
     libraryName.setBounds (row.removeFromLeft (260));
     row.removeFromLeft (gap);
     projectButton.setBounds (row.removeFromLeft (90));
+    row.removeFromLeft (gap);
+    addSoundButton.setBounds (row.removeFromLeft (90));
     row.removeFromLeft (gap);
     removeButton.setBounds (row.removeFromRight (90));
     row.removeFromRight (gap);
@@ -657,7 +666,11 @@ void MainComponent::setPreview (bool on)
     }
     juce::MouseCursor::showWaitCursor();
     auto loaded = std::make_unique<syn::LibraryPlayer>();
-    const auto error = loaded->load (*lastLibrary, lastLibraryFolder, live.getSampleRate());
+    // With several sounds, it plays the selected row's: they'd all sound at once otherwise.
+    const auto sounds = lastLibrary->soundsRecorded();
+    const int sound = std::find (sounds.begin(), sounds.end(), currentSound()) != sounds.end() ? currentSound() : sounds.front();
+    const auto tried = sounds.size() > 1 ? lastLibrary->forSound (sound) : *lastLibrary;
+    const auto error = loaded->load (tried, lastLibraryFolder, live.getSampleRate());
     juce::MouseCursor::hideWaitCursor();
     if (error.isNotEmpty())
     {
@@ -667,7 +680,7 @@ void MainComponent::setPreview (bool on)
     player = std::move (loaded);
     live.setPreview (player.get());
     previewButton.setToggleState (true, juce::dontSendNotification);
-    setStatus ("The keyboard and your MIDI inputs play " + lastLibrary->map.libraryName
+    setStatus ("The keyboard and your MIDI inputs play " + tried.map.libraryName
                + " as recorded. Click Try library again to go back to the plugin.");
 }
 
@@ -706,6 +719,11 @@ void MainComponent::saveMap()
 
 void MainComponent::refreshTable()
 {
+    // The Sound column shows once there are sounds, the others narrowing to make room for it.
+    table.getHeader().setColumnVisible (colSound, ! map.sounds.empty());
+    table.getHeader().setStretchToFitActive (! map.sounds.empty());
+    if (! map.sounds.empty())
+        table.getHeader().resizeAllColumnsToFit (table.getVisibleContentWidth());
     table.updateContent();
     table.repaint();
     const int total = map.totalRecordings();
@@ -723,10 +741,148 @@ void MainComponent::addGroup (syn::Group group)
         const auto& last = map.groups.back();
         group.lowNote = group.highNote = juce::jmin (127, juce::jmax (last.lowNote, last.highNote) + (last.pitched ? 12 : 1));
     }
+    group.sound = currentSound();
     map.groups.push_back (group);
     saveMap();
     refreshTable();
     table.selectRow ((int) map.groups.size() - 1);
+}
+
+int MainComponent::currentSound() const
+{
+    // New rows join the selected row's sound, or the last row's.
+    const int row = table.getSelectedRow();
+    if (juce::isPositiveAndBelow (row, (int) map.groups.size()))
+        return map.groups[(size_t) row].sound;
+    return map.groups.empty() ? (map.sounds.empty() ? -1 : (int) map.sounds.size() - 1) : map.groups.back().sound;
+}
+
+void MainComponent::addSound()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin and pick a sound in it first.");
+    // The sound as it is now, before anything else can change it.
+    juce::MemoryBlock state;
+    plugin->getStateInformation (state);
+    auto suggested = plugin->getNumPrograms() > 0 ? plugin->getProgramName (plugin->getCurrentProgram()).trim() : juce::String();
+    if (suggested.isEmpty() || suggested.equalsIgnoreCase ("default"))
+        suggested = "Sound " + juce::String (map.sounds.size() + 1);
+
+    auto* window = new juce::AlertWindow ("Add sound",
+                                          "Name the sound the plugin plays now. It's recorded with the rows of "
+                                          "the sound before it, which you can change.",
+                                          juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("name", suggested);
+    window->addButton ("Add", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    window->enterModalState (true, juce::ModalCallbackFunction::create (
+        [safe = juce::Component::SafePointer<MainComponent> (this), window, state] (int result)
+        {
+            const auto name = window->getTextEditorContents ("name").trim();
+            if (safe != nullptr && result == 1)
+                safe->addSound (name.isNotEmpty() ? name : "Sound " + juce::String (safe->map.sounds.size() + 1), state);
+        }), true);
+}
+
+void MainComponent::addSound (const juce::String& name, juce::MemoryBlock state)
+{
+    const int sound = (int) map.sounds.size();
+    map.sounds.push_back ({ name, std::move (state) });
+    // The first sound takes the rows that have none; later ones copy the last sound's rows.
+    int rows = 0;
+    for (auto& g : map.groups)
+        if (g.sound < 0)
+        {
+            g.sound = sound;
+            ++rows;
+        }
+    if (rows == 0)
+    {
+        const int previous = map.groups.empty() ? -1 : map.groups.back().sound;
+        std::vector<syn::Group> copies;
+        for (const auto& g : map.groups)
+            if (g.sound == previous)
+                copies.push_back (g);
+        if (copies.empty())
+            copies.push_back (syn::Group::keys());
+        for (auto& g : copies)
+        {
+            g.sound = sound;
+            map.groups.push_back (g);
+        }
+        rows = (int) copies.size();
+    }
+    saveMap();
+    refreshTable();
+    table.selectRow ((int) map.groups.size() - 1);
+    setStatus ("Added " + name + " with " + juce::String (rows) + (rows == 1 ? " row" : " rows")
+               + ". Pick the next sound in the plugin and press Add sound again, or Record library.");
+}
+
+void MainComponent::showSoundMenu (int row)
+{
+    if (! juce::isPositiveAndBelow (row, (int) map.groups.size()))
+        return;
+    const int sound = map.groups[(size_t) row].sound;
+    juce::PopupMenu menu;
+    if (const auto* s = map.soundOf (map.groups[(size_t) row]))
+    {
+        menu.addItem ("Switch the plugin to " + s->name, [this, sound]
+        {
+            if (plugin == nullptr)
+                return setStatus ("Load the plugin first.");
+            const auto& state = map.sounds[(size_t) sound].state;
+            {
+                const juce::ScopedLock lock (plugin->getCallbackLock());
+                plugin->setStateInformation (state.getData(), (int) state.getSize());
+            }
+            setStatus ("The plugin plays " + map.sounds[(size_t) sound].name + " now, for Listen, Measure and Find notes.");
+        });
+        menu.addItem ("Rename " + s->name + "...", [this, sound]
+        {
+            auto* window = new juce::AlertWindow ("Rename sound", {}, juce::MessageBoxIconType::NoIcon, this);
+            window->addTextEditor ("name", map.sounds[(size_t) sound].name);
+            window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+            window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+            window->enterModalState (true, juce::ModalCallbackFunction::create (
+                [safe = juce::Component::SafePointer<MainComponent> (this), window, sound] (int result)
+                {
+                    const auto name = window->getTextEditorContents ("name").trim();
+                    if (safe == nullptr || result != 1 || name.isEmpty())
+                        return;
+                    safe->map.sounds[(size_t) sound].name = name;
+                    safe->saveMap();
+                    safe->refreshTable();
+                }), true);
+        });
+        menu.addItem ("Remove " + s->name + " and its rows", [this, sound] { removeSound (sound); });
+        menu.addSeparator();
+    }
+    juce::PopupMenu move;
+    for (int other = 0; other < (int) map.sounds.size(); ++other)
+        move.addItem (map.sounds[(size_t) other].name, other != sound, other == sound, [this, row, other]
+        {
+            map.groups[(size_t) row].sound = other;
+            saveMap();
+            refreshTable();
+        });
+    menu.addSubMenu ("Record this row with", move);
+    menu.showMenuAsync ({});
+}
+
+void MainComponent::removeSound (int sound)
+{
+    map.groups.erase (std::remove_if (map.groups.begin(), map.groups.end(),
+                                      [sound] (const syn::Group& g) { return g.sound == sound; }),
+                      map.groups.end());
+    map.sounds.erase (map.sounds.begin() + sound);
+    for (auto& g : map.groups)
+        if (g.sound > sound)
+            --g.sound;
+    if (map.groups.empty())
+        map.groups.push_back (syn::Group::keys());
+    saveMap();
+    refreshTable();
 }
 
 void MainComponent::removeGroup()
@@ -1044,6 +1200,7 @@ void MainComponent::showKeyMenu (int note)
             keys.highNote = choice == 8 ? high : juce::jmax (self.newRowStart, note);
             keys.name = "Keys " + syn::noteName (keys.lowNote) + "-" + syn::noteName (keys.highNote);
             keys.midiChannel = self.selectedChannel();
+            keys.sound = self.currentSound();
             self.newRowStart = -1;
             self.map.groups.push_back (keys);
             self.saveMap();
@@ -1061,6 +1218,7 @@ void MainComponent::showKeyMenu (int note)
         {
             auto drum = syn::Group::drum (name, note);
             drum.midiChannel = self.selectedChannel();
+            drum.sound = self.currentSound();
             self.map.groups.push_back (drum);
             self.saveMap();
             self.refreshTable();
@@ -1142,10 +1300,17 @@ void MainComponent::offerFoundRows (const juce::Array<int>& found, int channel)
         // 1: replace, 2: add, 0: no.
         if (safe == nullptr || choice == 0)
             return;
+        // With several sounds, only the selected row's sound has its rows replaced.
+        const int sound = safe->currentSound();
         if (choice == 1)
-            safe->map.groups.clear();
-        for (auto& g : *rows)
+            safe->map.groups.erase (std::remove_if (safe->map.groups.begin(), safe->map.groups.end(),
+                                                    [sound] (const syn::Group& g) { return g.sound == sound; }),
+                                    safe->map.groups.end());
+        for (auto g : *rows)
+        {
+            g.sound = sound;
             safe->map.groups.push_back (g);
+        }
         safe->saveMap();
         safe->refreshTable();
         safe->table.selectRow ((int) safe->map.groups.size() - (int) rows->size());
@@ -1174,6 +1339,7 @@ juce::String MainComponent::cellText (const syn::Group& g, int column) const
     switch (column)
     {
         case colName:        return g.name;
+        case colSound:       return map.soundOf (g) != nullptr ? map.soundOf (g)->name : juce::String();
         case colLow:         return syn::noteName (g.lowNote);
         case colHigh:        return syn::noteName (g.highNote);
         case colStep:        return juce::String (juce::jmax (1, g.step));
@@ -1252,9 +1418,14 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         cell = new EditableCell();
     }
     cell->setText (cellText (g, column), juce::dontSendNotification);
-    cell->setEditable (false, column != colCount, false);
+    cell->setEditable (false, column != colCount && column != colSound, false);
     cell->setJustificationType (column == colName ? juce::Justification::centredLeft : juce::Justification::centred);
     cell->onEdit = [this, row, column] (const juce::String& text) { setCell (row, column, text); };
-    cell->onSelect = [this, row] { table.selectRow (row); };
+    cell->onSelect = [this, row, column]
+    {
+        table.selectRow (row);
+        if (column == colSound)
+            showSoundMenu (row);
+    };
     return cell;
 }

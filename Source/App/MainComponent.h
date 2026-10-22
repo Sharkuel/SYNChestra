@@ -24,7 +24,7 @@ public:
 
 private:
     enum Column { colOn = 1, colName, colLow, colHigh, colStep, colLayers, colRoundRobins, colHold, colRelease,
-                  colPitched, colOneShot, colLoop, colKeyUp, colChannel, colSwitch, colCount };
+                  colPitched, colOneShot, colLoop, colKeyUp, colChannel, colSwitch, colCount, colSound };
 
     void scanPlugins();
     void refreshPluginChoices();
@@ -42,6 +42,11 @@ private:
     void chooseOutput();
     void setPreview (bool on);
     void addGroup (syn::Group);
+    int currentSound() const;
+    void addSound();
+    void addSound (const juce::String& name, juce::MemoryBlock state);
+    void showSoundMenu (int row);
+    void removeSound (int sound);
     void removeGroup();
     void listenToGroup();
     void measureGroup();
@@ -92,7 +97,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" }, showButton { "Show plugin" },
-        addKeysButton { "Add keys" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
+        addKeysButton { "Add keys" }, addSoundButton { "Add sound" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
         listenButton { "Listen" }, measureButton { "Measure" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, floe { "Floe" }, effectKnobs { "Effect knobs" },
         skipSameLayers { "Skip same layers" };
