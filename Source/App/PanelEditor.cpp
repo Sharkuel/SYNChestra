@@ -194,14 +194,183 @@ private:
     bool dragging = false, moved = false, resizing = false;
 };
 
+/** Floe's window, roughly, as a library's look changes it: its background picture filling the
+    middle under the vignette, the layer panels showing it blurred under the tint, and the icon
+    on each layer's instrument. Floe draws its own controls; these are only outlines to judge by. */
+class PanelEditor::FloeView final : public juce::Component
+{
+public:
+    explicit FloeView (PanelEditor& e) : editor (e) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& map = editor.map;
+        g.fillAll (juce::Colour (0xff111214));
+        // Floe's window is about 16:9.
+        auto window = getLocalBounds().toFloat().withSizeKeepingCentre (getHeight() * 16.0f / 9.0f, (float) getHeight());
+        g.setColour (juce::Colour (0xff1c1d20));
+        g.fillRect (window);
+
+        auto mid = window;
+        const auto top = mid.removeFromTop (window.getHeight() * 0.08f);
+        const auto bottom = mid.removeFromBottom (window.getHeight() * 0.13f);
+
+        // The middle: the picture filling it, then the vignette over it.
+        if (editor.background.isValid())
+            g.drawImage (editor.background, mid, juce::RectanglePlacement::fillDestination);
+        else
+            g.setColour (juce::Colour (0xff26282c)), g.fillRect (mid);
+        const auto vignette = map.panel.floeVignette;
+        if (! vignette.isTransparent())
+        {
+            const auto centre = mid.getCentre();
+            const float inner = 0.2f * juce::jmin (mid.getWidth(), mid.getHeight());
+            const float outer = centre.getDistanceFrom (mid.getTopLeft());
+            juce::ColourGradient gradient (vignette.withAlpha (0.0f), centre, vignette, centre.translated (outer, 0.0f), true);
+            gradient.addColour (inner / outer, vignette.withAlpha (0.0f));
+            g.setGradientFill (gradient);
+            g.fillRect (mid);
+        }
+
+        // The tabs, then three layer panels: the picture blurred, darkened as Floe does, and tinted.
+        g.setColour (juce::Colours::white.withAlpha (0.8f));
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        auto tabs = mid.removeFromTop (mid.getHeight() * 0.1f).withSizeKeepingCentre (220.0f, 18.0f);
+        for (const auto* name : { "PERFORM", "LAYERS", "EFFECTS" })
+            g.drawText (name, tabs.removeFromLeft (73.0f), juce::Justification::centred);
+        auto panels = mid.reduced (mid.getWidth() * 0.02f, mid.getHeight() * 0.04f);
+        const float gap = panels.getWidth() * 0.015f;
+        const float panelWidth = (panels.getWidth() - 2.0f * gap) / 3.0f;
+        const auto names = instrumentNames();
+        for (int layer = 0; layer < 3; ++layer)
+        {
+            const auto r = panels.removeFromLeft (panelWidth);
+            panels.removeFromLeft (gap);
+            juce::Path shape;
+            shape.addRoundedRectangle (r, 6.0f);
+            {
+                juce::Graphics::ScopedSaveState state (g);
+                g.reduceClipRegion (shape);
+                if (blurred.isValid())
+                {
+                    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+                    g.drawImage (blurred, mid.getUnion (r), juce::RectanglePlacement::fillDestination);
+                }
+                g.fillAll (juce::Colours::black.withAlpha (0.35f));
+                if (! map.panel.floeTint.isTransparent())
+                    g.fillAll (map.panel.floeTint);
+            }
+            g.setColour (juce::Colours::white.withAlpha (0.15f));
+            g.strokePath (shape, juce::PathStrokeType (1.0f));
+
+            // The layer's instrument, with the library's icon beside its name.
+            auto header = r.reduced (8.0f).removeFromTop (22.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.3f));
+            g.fillRoundedRectangle (header, 3.0f);
+            auto iconArea = header.removeFromLeft (22.0f).reduced (3.0f);
+            if (editor.icon.isValid())
+                g.drawImage (editor.icon, iconArea, juce::RectanglePlacement::fillDestination);
+            else
+                g.setColour (juce::Colours::white.withAlpha (0.25f)), g.drawRect (iconArea);
+            g.setColour (juce::Colours::white.withAlpha (layer < names.size() ? 0.9f : 0.4f));
+            g.setFont (juce::FontOptions (12.0f));
+            g.drawText (layer < names.size() ? names[layer] : juce::String ("Empty layer"), header.reduced (4.0f, 0.0f),
+                        juce::Justification::centredLeft, true);
+
+            // Floe's own knobs, as faint outlines.
+            g.setColour (juce::Colours::white.withAlpha (0.18f));
+            auto knobs = r.reduced (12.0f).withTrimmedTop (36.0f);
+            for (int row = 0; row < 3; ++row)
+            {
+                auto line = knobs.removeFromTop (knobs.getHeight() / (float) (3 - row));
+                for (int k = 0; k < 3; ++k)
+                    g.drawEllipse (line.removeFromLeft (line.getWidth() / (float) (3 - k)).withSizeKeepingCentre (26.0f, 26.0f), 1.5f);
+            }
+        }
+
+        // The top bar, with the library's name, and the keyboard along the bottom.
+        g.setColour (juce::Colour (0xff1c1d20));
+        g.fillRect (top);
+        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawText ("FLOE", top.reduced (10.0f, 0.0f), juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (12.0f));
+        g.drawText (map.libraryName, top, juce::Justification::centred);
+        g.setColour (juce::Colour (0xff1c1d20));
+        g.fillRect (bottom);
+        auto keys = bottom.reduced (8.0f, 6.0f);
+        const float keyWidth = keys.getWidth() / 52.0f;
+        for (int k = 0; k < 52; ++k)
+        {
+            g.setColour (juce::Colour (0xffe8e8e8));
+            g.fillRect (keys.getX() + k * keyWidth + 0.5f, keys.getY(), keyWidth - 1.0f, keys.getHeight());
+            if (const int n = k % 7; n != 2 && n != 6 && k < 51)
+            {
+                g.setColour (juce::Colour (0xff202020));
+                g.fillRect (keys.getX() + (k + 0.7f) * keyWidth, keys.getY(), keyWidth * 0.6f, keys.getHeight() * 0.6f);
+            }
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.5f));
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText ("Floe, roughly", window.reduced (6.0f).removeFromBottom (14.0f).withTrimmedBottom (0.0f).translated (0.0f, -bottom.getHeight()),
+                    juce::Justification::bottomRight);
+    }
+
+    /** Remakes the blurred copy of the background, after it changed. */
+    void update()
+    {
+        blurred = editor.background.isValid()
+                      ? editor.background.rescaled (juce::jmax (1, editor.background.getWidth() / 24),
+                                                    juce::jmax (1, editor.background.getHeight() / 24),
+                                                    juce::Graphics::highResamplingQuality)
+                      : juce::Image();
+        repaint();
+    }
+
+private:
+    /** The instruments Floe lists for the library: a row each, or a sound each. */
+    juce::StringArray instrumentNames() const
+    {
+        juce::StringArray names;
+        for (const auto& g : editor.map.groups)
+            if (g.enabled)
+                names.addIfNotAlreadyThere (editor.map.soundOf (g) != nullptr ? editor.map.soundOf (g)->name : g.name);
+        return names;
+    }
+
+    PanelEditor& editor;
+    juce::Image blurred;
+};
+
 PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallback)
-    : map (m), onChange (std::move (changeCallback)), canvas (std::make_unique<Canvas> (*this))
+    : map (m), onChange (std::move (changeCallback)), canvas (std::make_unique<Canvas> (*this)),
+      floeView (std::make_unique<FloeView> (*this))
 {
     for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &addButton, &backgroundButton, &coloursButton, &floeButton,
                                                             &resetButton, &selectedName, &labelCaption, &labelText,
                                                             &sizeCaption, &size, &removeButton, &help,
-                                                            &styleCaption, &style })
+                                                            &styleCaption, &style, &dsViewButton, &floeViewButton })
         addAndMakeVisible (c);
+    addChildComponent (*floeView);
+    addChildComponent (floeHelp);
+    for (auto* b : { &dsViewButton, &floeViewButton })
+    {
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (1);
+    }
+    dsViewButton.setToggleState (true, juce::dontSendNotification);
+    dsViewButton.onClick = [this] { showFloeView (false); };
+    floeViewButton.onClick = [this] { showFloeView (true); };
+    dsViewButton.setTooltip ("Shows the Decent Sampler panel, to lay out.");
+    floeViewButton.setTooltip ("Shows roughly how Floe looks with this library: its picture, icon, vignette and tint.");
+    floeHelp.setText ("Floe always shows its own controls, so a Floe library only changes its look: the "
+                      "background picture fills the middle of Floe's window, the vignette darkens its edges, "
+                      "the panels show it blurred under the tint, and the icon marks the library's instruments. "
+                      "Pick them with Background... and Floe.... Floe draws its own panels, so this view "
+                      "is only a guide.",
+                      juce::dontSendNotification);
+    floeHelp.setJustificationType (juce::Justification::topLeft);
+    floeHelp.setColour (juce::Label::textColourId, juce::Colours::grey);
     for (int st = syn::PanelControl::knob; st <= syn::PanelControl::horizontalFader; ++st)
         style.addItem (syn::PanelControl::nameOf ((syn::PanelControl::Style) st), st + 1);
     style.onChange = [this]
@@ -308,6 +477,12 @@ void PanelEditor::refresh()
         backgroundLoaded = map.backgroundImage;
         background = map.backgroundImage.isEmpty() ? juce::Image()
                                                    : juce::ImageFileFormat::loadFrom (juce::File (map.backgroundImage));
+        floeView->update();
+    }
+    if (map.floeIcon != iconLoaded)
+    {
+        iconLoaded = map.floeIcon;
+        icon = map.floeIcon.isEmpty() ? juce::Image() : juce::ImageFileFormat::loadFrom (juce::File (map.floeIcon));
     }
     backgroundButton.setButtonText (map.backgroundImage.isEmpty() ? "Background..."
                                                                   : "Background: " + juce::File (map.backgroundImage).getFileName());
@@ -320,6 +495,7 @@ void PanelEditor::refresh()
         selected = -1;
     showSelection();
     canvas->repaint();
+    floeView->repaint();
 }
 
 void PanelEditor::changed()
@@ -327,6 +503,25 @@ void PanelEditor::changed()
     if (onChange)
         onChange();
     canvas->repaint();
+    floeView->repaint();
+}
+
+void PanelEditor::showFloeView (bool floe)
+{
+    (floe ? floeViewButton : dsViewButton).setToggleState (true, juce::dontSendNotification);
+    canvas->setVisible (! floe);
+    floeView->setVisible (floe);
+    floeHelp.setVisible (floe);
+    for (auto* c : std::initializer_list<juce::Component*> { &addButton, &coloursButton, &resetButton })
+        c->setEnabled (! floe);
+    selectedName.setVisible (! floe);
+    help.setVisible (! floe);
+    if (floe)
+        for (auto* c : std::initializer_list<juce::Component*> { &labelCaption, &labelText, &sizeCaption, &size,
+                                                                &removeButton, &styleCaption, &style })
+            c->setVisible (false);
+    else
+        showSelection();
 }
 
 void PanelEditor::select (int index)
@@ -444,6 +639,7 @@ void PanelEditor::showColourMenu()
 
 void PanelEditor::showFloeMenu()
 {
+    showFloeView (true);
     juce::PopupMenu menu;
     menu.addItem (map.floeIcon.isEmpty() ? "Icon..." : "Icon: " + juce::File (map.floeIcon).getFileName() + "...",
                   [this] { chooseFloeIcon(); });
@@ -451,6 +647,7 @@ void PanelEditor::showFloeMenu()
         menu.addItem ("No icon", [this]
         {
             map.floeIcon = {};
+            refresh();
             changed();
         });
     menu.addSeparator();
@@ -480,6 +677,7 @@ void PanelEditor::chooseFloeIcon()
             return juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Icon",
                                                            "Can't read " + file.getFileName() + " as a picture.");
         map.floeIcon = file.getFullPathName();
+        refresh();
         changed();
     });
 }
@@ -574,9 +772,13 @@ void PanelEditor::resized()
     backgroundButton.setBounds (bar.removeFromLeft (240));
     bar.removeFromLeft (8);
     resetButton.setBounds (bar.removeFromLeft (140));
+    floeViewButton.setBounds (bar.removeFromRight (70));
+    dsViewButton.setBounds (bar.removeFromRight (130));
     area.removeFromTop (margin);
     canvas->setBounds (area.removeFromLeft (syn::Panel::width).withHeight (syn::Panel::height));
+    floeView->setBounds (canvas->getBounds());
     area.removeFromLeft (margin);
+    floeHelp.setBounds (area);
     selectedName.setBounds (area.removeFromTop (28));
     labelCaption.setBounds (area.removeFromTop (22));
     labelText.setBounds (area.removeFromTop (26));
