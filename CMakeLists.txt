@@ -15,10 +15,12 @@ include(cmake/PatchJuce.cmake)   # see the file: stops a crash with some plugins
 
 juce_add_gui_app(SYNChestra
     PRODUCT_NAME "SYNChestra"
-    COMPANY_NAME "SYNChestra")
+    COMPANY_NAME "SYNChestra"
+    ICON_BIG assets/icon.png)
 
-# The logo shown at the top of the main window (assets/logo-github.jpg, with its white frame, is the README's).
-juce_add_binary_data(SYNChestra_assets SOURCES assets/logo.png)
+# The icon, also shown at the top left of the main window and on the window itself
+# (assets/logo-github.png is the README's).
+juce_add_binary_data(SYNChestra_assets SOURCES assets/icon.png)
 
 target_sources(SYNChestra PRIVATE
     Source/App/Main.cpp
@@ -86,6 +88,8 @@ if(UNIX AND NOT APPLE)
     install(TARGETS SYNChestra RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT SYNChestra)
     install(FILES packaging/linux/SYNChestra.desktop
             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT SYNChestra)
+    install(FILES assets/icon.png RENAME synchestra.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps COMPONENT SYNChestra)
 
     set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};SYNChestra;SYNChestra;/")
     set(CPACK_GENERATOR "DEB;RPM")
@@ -104,6 +108,6 @@ if(UNIX AND NOT APPLE)
     set(CPACK_RPM_PACKAGE_LICENSE "AGPL-3.0-only")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
     set(CPACK_RPM_PACKAGE_REQUIRES "libX11, libXext, libXrandr, libXinerama, libXcursor")
-    set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION /usr/share/applications)
+    set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION /usr/share/applications /usr/share/pixmaps)
     include(CPack)
 endif()

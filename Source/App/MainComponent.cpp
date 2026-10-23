@@ -255,7 +255,7 @@ MainComponent::MainComponent()
     projectButton.setTooltip ("Save the rows, the plugin and the sound picked in it as a .synchestra project, "
                               "or open one to record a library again. Recording saves one next to the library.");
     showMap();
-    logo = juce::ImageCache::getFromMemory (BinaryData::logo_png, BinaryData::logo_pngSize);
+    logo = juce::ImageCache::getFromMemory (BinaryData::icon_png, BinaryData::icon_pngSize);
 
     refreshPluginChoices();
     setStatus (knownPlugins.getNumTypes() == 0 ? "Find your instrument plugins to start."
@@ -288,9 +288,9 @@ void MainComponent::resized()
     auto area = getLocalBounds().reduced (10);
     const int rowHeight = 28, gap = 8;
 
-    // The logo beside the top two rows: the plugin, then the library.
+    // The icon beside the top two rows: the plugin, then the library.
     auto top = area.removeFromTop (rowHeight * 2 + gap);
-    logoArea = top.removeFromLeft (juce::roundToInt (top.getHeight() * 912.0 / 412.0));
+    logoArea = top.removeFromLeft (top.getHeight());
     top.removeFromLeft (gap * 2);
     auto row = top.removeFromTop (rowHeight);
     scanButton.setBounds (row.removeFromLeft (110));
