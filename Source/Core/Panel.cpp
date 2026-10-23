@@ -5,7 +5,7 @@ namespace syn
 juce::String PanelControl::nameOf (Kind kind)
 {
     static const char* names[] = { "Volume", "Release", "Tone", "Chorus", "Delay", "Reverb", "Room",
-                                   "Title", "Text", "Articulations" };
+                                   "Attack", "Pan", "Tune", "Title", "Text", "Articulations" };
     return names[(int) kind];
 }
 
@@ -66,23 +66,26 @@ PanelControl Panel::standard (PanelControl::Kind kind)
     c.kind = kind;
     if (c.isKnob())
     {
-        // Knobs sit in a row along the bottom, so a background picture shows above them.
+        // Knobs sit in a row just above Decent Sampler's keyboard, so a background picture shows
+        // above them.
         c.label = PanelControl::nameOf (kind);
-        c.bounds = { 20 + 110 * (int) kind, height - 110, 90, 90 };
+        c.bounds = { 20 + 110 * (int) kind, keyboardTop - 100, 90, 90 };
+        if (kind >= PanelControl::attack)   // not in the standard layout: a row above, on the right
+            c.bounds.setPosition (width - 130 - 110 * (PanelControl::tune - kind), keyboardTop - 195);
     }
     else if (kind == PanelControl::title)
     {
-        c.bounds = { 20, 20, width - 280, 40 };
+        c.bounds = { 20, topBarBottom + 10, width - 280, 40 };
         c.textSize = 28;
     }
     else if (kind == PanelControl::articulations)
     {
-        c.bounds = { width - 230, 25, 210, 30 };
+        c.bounds = { width - 230, topBarBottom + 15, 210, 30 };
     }
     else
     {
         c.label = "Text";
-        c.bounds = { 20, 80, 300, 30 };
+        c.bounds = { 20, topBarBottom + 60, 300, 30 };
     }
     return c;
 }
@@ -102,6 +105,22 @@ std::vector<PanelControl> Panel::standardLayout (bool effects, bool articulation
     if (articulationMenu)
         layout.push_back (standard (PanelControl::articulations));
     return layout;
+}
+
+juce::Rectangle<int> Panel::freeSpot (const std::vector<PanelControl>& controls, juce::Rectangle<int> wanted)
+{
+    const auto isFree = [&controls] (juce::Rectangle<int> r)
+    {
+        return r.getY() >= topBarBottom && r.getBottom() <= keyboardTop && r.getRight() <= width
+               && std::none_of (controls.begin(), controls.end(), [r] (const auto& c) { return c.bounds.intersects (r); });
+    };
+    if (isFree (wanted))
+        return wanted;
+    for (int y = keyboardTop - 10 - wanted.getHeight(); y >= topBarBottom; y -= 10)
+        for (int x = 20; x + wanted.getWidth() <= width - 20; x += 10)
+            if (isFree (wanted.withPosition (x, y)))
+                return wanted.withPosition (x, y);
+    return wanted;
 }
 
 std::vector<PanelControl> Panel::layout (bool effects, bool articulationMenu) const

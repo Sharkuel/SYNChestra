@@ -100,14 +100,22 @@ juce::String Library::toSfz() const
         }
     }
 
-    // The panel's Volume and Release knobs, as named CC knobs: SFZ players list them by name
-    // (CC7 is volume, CC72 release time, as on most synths). SFZ has no standard panel for the rest.
-    juce::String volumeKnob, releaseKnob;
+    // The panel's Volume, Release, Attack and Pan knobs, as named CC knobs: SFZ players list them
+    // by name (CC7 is volume, CC72 release time, CC73 attack time and CC10 pan, as on most synths).
+    // SFZ has no standard panel for the rest.
+    juce::String volumeKnob, releaseKnob, attackKnob, panKnob;
     for (const auto& c : map.panel.layout (false, false))
+    {
+        const auto name = c.label.isNotEmpty() ? c.label : PanelControl::nameOf (c.kind);
         if (c.kind == PanelControl::volume)
-            volumeKnob = c.label.isNotEmpty() ? c.label : PanelControl::nameOf (c.kind);
+            volumeKnob = name;
         else if (c.kind == PanelControl::release)
-            releaseKnob = c.label.isNotEmpty() ? c.label : PanelControl::nameOf (c.kind);
+            releaseKnob = name;
+        else if (c.kind == PanelControl::attack)
+            attackKnob = name;
+        else if (c.kind == PanelControl::pan)
+            panKnob = name;
+    }
 
     juce::String out;
     out << "// " << map.libraryName << ", recorded with SYNChestra\n\n";
@@ -116,6 +124,10 @@ juce::String Library::toSfz() const
         out << "label_cc7=" << volumeKnob << "\nset_cc7=102\n";
     if (releaseKnob.isNotEmpty())
         out << "label_cc72=" << releaseKnob << "\nset_cc72=0\n";
+    if (attackKnob.isNotEmpty())
+        out << "label_cc73=" << attackKnob << "\nset_cc73=0\n";
+    if (panKnob.isNotEmpty())
+        out << "label_cc10=" << panKnob << "\nset_cc10=64\n";
     for (const auto& [cc, value] : ccDefaults)
         out << "set_cc" << cc << "=" << value << "\n";
     out << "\n";
@@ -143,6 +155,10 @@ juce::String Library::toSfz() const
                 out << " amplitude_oncc7=100";
             if (releaseKnob.isNotEmpty() && ! group.oneShot)
                 out << " ampeg_release_oncc72=5";
+            if (attackKnob.isNotEmpty())
+                out << " ampeg_attack_oncc73=2";
+            if (panKnob.isNotEmpty())
+                out << " pan=-100 pan_oncc10=200";   // centred at CC10 = 64
             if (takes.size() > 1)
                 out << " seq_length=" << (int) takes.size();
             if (const int note = group.switchNote(); note >= 0)
@@ -174,6 +190,8 @@ juce::String Library::toSfz() const
                 out << " pitch_keytrack=0";
             if (volumeKnob.isNotEmpty())
                 out << " amplitude_oncc7=100";
+            if (panKnob.isNotEmpty())
+                out << " pan=-100 pan_oncc10=200";
             if (const int note = group.switchNote(); note >= 0)
                 out << " sw_lokey=" << switchLow << " sw_hikey=" << switchHigh << " sw_last=" << note
                     << " sw_default=" << switchDefault;
@@ -271,6 +289,9 @@ juce::String Library::toDecentSampler() const
                 { 0.0, 1.0, 0.0, "effect", 2, "FX_WET_LEVEL" },
                 { 0.0, 1.0, 0.0, "effect", 3, "FX_REVERB_WET_LEVEL" },
                 { 0.0, 1.0, 0.7, "effect", 3, "FX_REVERB_ROOM_SIZE" },
+                { 0.0, 10.0, 0.0, "amp", 0, "ENV_ATTACK" },        // seconds
+                { -100.0, 100.0, 0.0, "amp", 0, "PAN" },
+                { -12.0, 12.0, 0.0, "amp", 0, "GLOBAL_TUNING" },   // semitones
             };
             const auto& knob = knobs[(int) c.kind];
             effectsUsed = effectsUsed || c.isEffect();
@@ -309,6 +330,7 @@ juce::String Library::toDecentSampler() const
             place (*label, c);
             label->setAttribute ("text", c.kind == PanelControl::title && c.label.isEmpty() ? map.libraryName : c.label);
             label->setAttribute ("textSize", c.textSize);
+            label->setAttribute ("hAlign", "left");   // as the panel editor shows it; Decent Sampler centres by default
             label->setAttribute ("textColor", colour (panel.textColour));
         }
     }

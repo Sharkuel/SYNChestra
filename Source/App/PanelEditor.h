@@ -28,6 +28,9 @@ private:
     void changed();
     void select (int index);
     void showAddMenu();
+    void showKnobPicker();
+    bool shows (syn::PanelControl::Kind) const;   // a knob of this kind is on the panel
+    void setShown (syn::PanelControl::Kind, bool);
     void showColourMenu();
     void chooseBackground();
     void showFloeMenu();
@@ -50,7 +53,7 @@ private:
     std::unique_ptr<FloeView> floeView;
     juce::TextButton dsViewButton { "Decent Sampler" }, floeViewButton { "Floe" };
     juce::Label floeHelp;
-    juce::TextButton addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." }, floeButton { "Floe..." },
+    juce::TextButton knobsButton { "Knobs..." }, addButton { "Add..." }, backgroundButton { "Background..." }, coloursButton { "Colours..." }, floeButton { "Floe..." },
         resetButton { "Standard layout" }, removeButton { "Remove" };
     juce::Label selectedName, labelCaption { {}, "Label" }, sizeCaption { {}, "Size" }, styleCaption { {}, "Style" }, help;
     juce::ComboBox style;
