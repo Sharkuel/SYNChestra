@@ -100,9 +100,10 @@ public:
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 
-    /** A 24-bit WAV. With a loop, it also carries a sampler chunk with the loop and root note,
-        which most samplers read on their own. */
-    static bool writeWav (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate,
-                          const Sample* loopInfo = nullptr);
+    /** A 24-bit WAV, or FLAC when the file's name ends in .flac. With a loop, a WAV also carries
+        a sampler chunk with the loop and root note, which most samplers read on their own; FLAC
+        has no such chunk, so there the loop is only in the presets. */
+    static bool writeSample (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate,
+                             const Sample* loopInfo = nullptr);
 };
 } // namespace syn

@@ -459,6 +459,44 @@ int main (int argc, char* argv[])
                "too-short recordings are never called the same");
     }
 
+    // FLAC: the same 24-bit samples in a smaller file, and the presets point at them.
+    {
+        syn::SampleMap asFlac;
+        asFlac.libraryName = "Flac";
+        asFlac.flac = true;
+        syn::Group held;
+        held.name = "Keys";
+        held.lowNote = held.highNote = 57;
+        held.layers = 1;
+        held.holdSeconds = 0.5;
+        held.releaseSamples = true;
+        asFlac.groups = { held };
+        const auto flacFolder = folder.getSiblingFile ("Flac");
+        juce::String flacReport;
+        const auto lib = syn::LibraryRecorder::record (synth, asFlac, {}, flacFolder, nullptr, flacReport);
+        int flacs = 0, releases = 0;
+        for (const auto& s : lib.samples)
+        {
+            flacs += s.path.endsWith (".flac") ? 1 : 0;
+            releases += s.release && s.path.endsWith ("_rel.flac") ? 1 : 0;
+        }
+        check (lib.samples.size() == 2 && flacs == 2 && releases == 1,
+               "with FLAC on, samples and release samples are .flac files");
+        if (! lib.samples.empty())
+        {
+            if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (flacFolder.getChildFile (lib.samples[0].path)) })
+                check (reader->getFormatName().containsIgnoreCase ("flac") && reader->bitsPerSample == 24 && reader->numChannels == 2,
+                       "FLAC samples are 24-bit stereo");
+            else
+                check (false, "the FLAC sample can be read");
+        }
+        check (lib.writePresets (flacFolder, true, true, true).isEmpty()
+                   && flacFolder.getChildFile ("Flac.dspreset").loadFileAsString().contains (".flac\"")
+                   && flacFolder.getChildFile ("Flac.sfz").loadFileAsString().contains (".flac")
+                   && flacFolder.getChildFile ("Flac.floe.lua").loadFileAsString().contains (".flac\""),
+               "the .dspreset, .sfz and .floe.lua play the FLAC files");
+    }
+
     // Release samples: the sound after key-up is kept as its own sample, played on key-up.
     {
         syn::SampleMap withRelease;
