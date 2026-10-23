@@ -1007,6 +1007,7 @@ void MainComponent::showPanelEditor()
     {
         auto editor = std::make_unique<PanelEditor> (map, [this]
         {
+            effectKnobs.setToggleState (map.effects, juce::dontSendNotification);   // ticking an effect knob turns them on
             saveMap();
             setStatus (map.panel.controls.empty() ? "The Decent Sampler panel uses the standard layout."
                                                   : "The Decent Sampler panel will be laid out as in the panel editor.");

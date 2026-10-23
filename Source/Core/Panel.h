@@ -7,7 +7,7 @@ namespace syn
 /** One thing on a library's front panel: a knob, the title, a line of text or the articulation menu. */
 struct PanelControl
 {
-    enum Kind { volume, release, tone, chorus, delay, reverb, room, title, text, articulations };
+    enum Kind { volume, release, tone, chorus, delay, reverb, room, attack, pan, tune, title, text, articulations };
     Kind kind = volume;
     enum Style { knob, verticalFader, horizontalFader };
     Style style = knob;   // how a knob kind is drawn
@@ -15,7 +15,7 @@ struct PanelControl
     juce::Rectangle<int> bounds;
     int textSize = 16;    // titles and texts
 
-    bool isKnob() const { return kind <= room; }
+    bool isKnob() const { return kind <= tune; }
     bool isEffect() const { return kind >= tone && kind <= room; }
     static juce::String nameOf (Kind);   // "Volume", "Title"...
     static juce::String nameOf (Style);  // "Knob", "Vertical fader", "Horizontal fader"
@@ -36,6 +36,10 @@ struct Panel
     // Decent Sampler draws its top bar (Browse, preset name, Volume) over the top of the panel and
     // its keyboard over the bottom, so only what lies between these two can be seen and turned.
     static constexpr int topBarBottom = 40, keyboardTop = 290;
+
+    /** Where a new control of this size can go without covering one already there: wanted if it's
+        free, else the first free spot in rows working up from the keyboard, else wanted anyway. */
+    static juce::Rectangle<int> freeSpot (const std::vector<PanelControl>&, juce::Rectangle<int> wanted);
 
     juce::Colour background { 0xFF22282E };   // under the picture, or the whole panel without one
     juce::Colour textColour { 0xFFFFFFFF };

@@ -373,7 +373,7 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
     : map (m), onChange (std::move (changeCallback)), canvas (std::make_unique<Canvas> (*this)),
       floeView (std::make_unique<FloeView> (*this))
 {
-    for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &addButton, &backgroundButton, &coloursButton, &floeButton,
+    for (auto* c : std::initializer_list<juce::Component*> { canvas.get(), &knobsButton, &addButton, &backgroundButton, &coloursButton, &floeButton,
                                                             &resetButton, &selectedName, &labelCaption, &labelText,
                                                             &sizeCaption, &size, &removeButton, &help,
                                                             &styleCaption, &style, &dsViewButton, &floeViewButton })
@@ -412,8 +412,10 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
         changed();
     };
 
+    knobsButton.onClick = [this] { showKnobPicker(); };
+    knobsButton.setTooltip ("Ticks which knobs the panel has: Volume, Release, Attack, Pan, Tune and the effects.");
     addButton.onClick = [this] { showAddMenu(); };
-    addButton.setTooltip ("Adds a knob that isn't on the panel yet, a line of text, or the articulation menu.");
+    addButton.setTooltip ("Adds the title, a line of text, or the articulation menu.");
     backgroundButton.onClick = [this] { chooseBackground(); };
     coloursButton.onClick = [this] { showColourMenu(); };
     floeButton.onClick = [this] { showFloeMenu(); };
@@ -465,7 +467,8 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
     help.setText ("Drag things to move them. Click one to rename or resize it, or make a knob a fader; drag a "
                   "fader's far end to lengthen it. Right-click to remove one. Keep things off the shaded "
                   "strips: Decent Sampler's top bar and keyboard cover them. "
-                  "SFZ players show no panel: they list the Volume and Release knobs by the names given here.",
+                  "SFZ players show no panel: they list the Volume, Release, Attack and Pan knobs by the "
+                  "names given here.",
                   juce::dontSendNotification);
     help.setJustificationType (juce::Justification::topLeft);
     help.setColour (juce::Label::textColourId, juce::Colours::grey);
@@ -540,7 +543,7 @@ void PanelEditor::showFloeView (bool floe)
     canvas->setVisible (! floe);
     floeView->setVisible (floe);
     floeHelp.setVisible (floe);
-    for (auto* c : std::initializer_list<juce::Component*> { &addButton, &coloursButton, &resetButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &knobsButton, &addButton, &coloursButton, &resetButton })
         c->setEnabled (! floe);
     selectedName.setVisible (! floe);
     help.setVisible (! floe);
@@ -618,20 +621,8 @@ void PanelEditor::showAddMenu()
         return std::any_of (list.begin(), list.end(), [kind] (const auto& c) { return c.kind == kind; });
     };
     juce::PopupMenu menu;
-    for (int k = syn::PanelControl::volume; k <= syn::PanelControl::room; ++k)
-    {
-        const auto kind = (syn::PanelControl::Kind) k;
-        const bool effect = kind >= syn::PanelControl::tone;
-        if (has (kind))
-            continue;
-        menu.addItem (syn::PanelControl::nameOf (kind) + " knob" + (effect && ! map.effects ? " (tick Effect knobs first)" : ""),
-                      ! effect || map.effects, false, [this, kind]
-        {
-            controls().push_back (syn::Panel::standard (kind));
-            select ((int) controls().size() - 1);
-            changed();
-        });
-    }
+    menu.addItem ("Knobs...", [this] { showKnobPicker(); });
+    menu.addSeparator();
     if (! has (syn::PanelControl::title))
         menu.addItem ("Title", [this]
         {
@@ -654,6 +645,102 @@ void PanelEditor::showAddMenu()
             changed();
         });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (addButton));
+}
+
+bool PanelEditor::shows (syn::PanelControl::Kind kind) const
+{
+    const auto& list = map.panel.controls.empty() ? shown : map.panel.controls;
+    return std::any_of (list.begin(), list.end(), [this, kind] (const auto& c) { return c.kind == kind && visible (c); });
+}
+
+void PanelEditor::setShown (syn::PanelControl::Kind kind, bool on)
+{
+    auto& list = controls();
+    const auto isKind = [kind] (const auto& c) { return c.kind == kind; };
+    if (on)
+    {
+        const bool effect = kind >= syn::PanelControl::tone && kind <= syn::PanelControl::room;
+        if (effect && ! map.effects)
+            map.effects = true;   // the effects are written once a knob uses one
+        if (std::none_of (list.begin(), list.end(), isKind))
+        {
+            auto c = syn::Panel::standard (kind);
+            c.bounds = syn::Panel::freeSpot (list, c.bounds);
+            list.push_back (c);
+        }
+    }
+    else
+    {
+        list.erase (std::remove_if (list.begin(), list.end(), isKind), list.end());
+    }
+    selected = -1;
+    showSelection();
+    changed();
+}
+
+void PanelEditor::showKnobPicker()
+{
+    /** A tick box per knob: ticking one puts it on the panel in a free spot, unticking removes it. */
+    struct Picker final : public juce::Component
+    {
+        explicit Picker (PanelEditor& e) : editor (e)
+        {
+            for (int k = syn::PanelControl::volume; k <= syn::PanelControl::tune; ++k)
+            {
+                const auto kind = (syn::PanelControl::Kind) k;
+                auto& box = boxes.emplace_back (std::make_unique<juce::ToggleButton> (syn::PanelControl::nameOf (kind)));
+                box->onClick = [this, kind, b = box.get()]
+                {
+                    editor.setShown (kind, b->getToggleState());
+                    update();
+                };
+                addAndMakeVisible (*box);
+            }
+            heading.setText ("Knobs on the panel", juce::dontSendNotification);
+            effectsNote.setText ("Tone, Chorus, Delay, Reverb and Room are Decent Sampler's effects; they start off.",
+                                 juce::dontSendNotification);
+            effectsNote.setColour (juce::Label::textColourId, juce::Colours::grey);
+            effectsNote.setFont (juce::FontOptions (12.0f));
+            addAndMakeVisible (heading);
+            addAndMakeVisible (effectsNote);
+            update();
+            setSize (300, 40 + 26 * 5 + 50);
+        }
+
+        void update()
+        {
+            for (int k = 0; k < (int) boxes.size(); ++k)
+                boxes[(size_t) k]->setToggleState (editor.shows ((syn::PanelControl::Kind) k), juce::dontSendNotification);
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced (10);
+            heading.setBounds (area.removeFromTop (24));
+            effectsNote.setBounds (area.removeFromBottom (36));
+            // Two columns: the amp's knobs, then the effects.
+            const syn::PanelControl::Kind columns[2][5] = {
+                { syn::PanelControl::volume, syn::PanelControl::release, syn::PanelControl::attack,
+                  syn::PanelControl::pan, syn::PanelControl::tune },
+                { syn::PanelControl::tone, syn::PanelControl::chorus, syn::PanelControl::delay,
+                  syn::PanelControl::reverb, syn::PanelControl::room } };
+            const int columnWidth = area.getWidth() / 2;
+            for (int col = 0; col < 2; ++col)
+            {
+                auto column = area.withX (area.getX() + col * columnWidth).withWidth (columnWidth);
+                for (const auto kind : columns[col])
+                    boxes[(size_t) kind]->setBounds (column.removeFromTop (26));
+            }
+        }
+
+        PanelEditor& editor;
+        std::vector<std::unique_ptr<juce::ToggleButton>> boxes;
+        juce::Label heading, effectsNote;
+    };
+    showFloeView (false);
+    // Inside this window, as the colour picker: a separate popup can hide behind it on Linux.
+    juce::CallOutBox::launchAsynchronously (std::make_unique<Picker> (*this), getLocalArea (&knobsButton, knobsButton.getLocalBounds()),
+                                            this);
 }
 
 void PanelEditor::showColourMenu()
@@ -792,12 +879,12 @@ void PanelEditor::resized()
 {
     auto area = getLocalBounds().reduced (margin);
     auto bar = area.removeFromTop (toolbarHeight - margin);
-    for (auto* b : { &addButton, &coloursButton, &floeButton })
+    for (auto* b : { &knobsButton, &addButton, &coloursButton, &floeButton })
     {
         b->setBounds (bar.removeFromLeft (100));
         bar.removeFromLeft (8);
     }
-    backgroundButton.setBounds (bar.removeFromLeft (240));
+    backgroundButton.setBounds (bar.removeFromLeft (200));
     bar.removeFromLeft (8);
     resetButton.setBounds (bar.removeFromLeft (140));
     floeViewButton.setBounds (bar.removeFromRight (70));

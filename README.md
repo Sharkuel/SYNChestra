@@ -128,14 +128,29 @@ choose **Open**, then **Open** again.
    **Panel...** opens the panel editor, which shows the panel at its real size (812 x 375).
    Decent Sampler draws its top bar over the top 40 and its keyboard over the bottom 85 of that,
    so the editor shades those strips: keep the controls between them.
+   **Knobs...** ticks which knobs the panel has; a ticked one goes in a free spot. Each knob's
+   job comes from its kind, whatever name it's given:
+
+   | Knob | Turns | Range, start |
+   | --- | --- | --- |
+   | Volume | the library's level | 0 to 100%, 80% |
+   | Release | how long a note fades after key-up | 0 to 5 s (or the row's Release), the row's Release |
+   | Attack | how long a note takes to fade in | 0 to 10 s, 0 |
+   | Pan | left to right | -100 to 100, centre |
+   | Tune | the pitch, in semitones | -12 to 12, 0 |
+   | Tone | a low-pass filter | 60 Hz to 22 kHz, open |
+   | Chorus, Delay, Reverb | how much of each effect | off to full, off |
+   | Room | the reverb's room size | 0 to 100%, 70% |
+
    Drag the title, knobs and articulation menu where you want them; click one to rename or
-   resize it, right-click to remove it, and **Add...** puts back a knob or adds a line of text.
+   resize it, right-click to remove it, and **Add...** adds the title, a line of text or the
+   articulation menu.
    **Colours...** sets the background, text and knob colours, and **Background...** picks a
    picture, copied to `Images/background.png` and scaled and cropped to fill the panel.
    **Style** turns a knob into a vertical or horizontal fader; drag a fader's far end to
    lengthen it. **Standard layout** puts everything back. SFZ has no standard panel: the .sfz gets the
-   Volume and Release knobs (CC7 and CC72) under the names given in the editor, which SFZ
-   players list.
+   Volume, Release, Attack and Pan knobs (CC7, CC72, CC73 and CC10) under the names given in the
+   editor, which SFZ players list.
 
 **Several sounds in one library.** To record many of a plugin's sounds in one go (all of a
 Kontakt library's instruments, say), set up the rows for the first one, then press **Add sound**:

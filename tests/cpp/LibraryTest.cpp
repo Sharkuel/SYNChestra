@@ -415,6 +415,30 @@ int main (int argc, char* argv[])
                    && back.panel.controls[2].style == syn::PanelControl::verticalFader,
                "the panel is saved with the map");
         check (syn::SampleMap().panel.layout (true, true).size() == 9, "the standard layout has the title, 7 knobs and the menu");
+
+        // Attack, Pan and Tune: Decent Sampler's amp envelope, pan and tuning; named CCs in SFZ.
+        auto extra = library;
+        extra.map.panel.controls = { syn::Panel::standard (syn::PanelControl::attack),
+                                     syn::Panel::standard (syn::PanelControl::pan),
+                                     syn::Panel::standard (syn::PanelControl::tune) };
+        const auto extraDs = extra.toDecentSampler();
+        check (extraDs.contains ("\"ENV_ATTACK\"") && extraDs.contains ("\"PAN\"") && extraDs.contains ("\"GLOBAL_TUNING\"")
+                   && extraDs.contains ("minValue=\"-12.0\"") && extraDs.contains ("minValue=\"-100.0\""),
+               "Attack, Pan and Tune knobs bind the envelope, pan and tuning");
+        const auto extraSfz = extra.toSfz();
+        check (extraSfz.contains ("label_cc73=Attack") && extraSfz.contains ("ampeg_attack_oncc73=2")
+                   && extraSfz.contains ("label_cc10=Pan") && extraSfz.contains ("pan=-100 pan_oncc10=200"),
+               "the .sfz names the Attack and Pan knobs");
+        const auto back2 = syn::SampleMap::fromValueTree (extra.map.toValueTree());
+        check (back2.panel.controls.size() == 3 && back2.panel.controls[2].kind == syn::PanelControl::tune,
+               "the new knobs are saved with the map");
+
+        // A knob added where another already is moves to a free spot above the keyboard.
+        const auto layout = syn::SampleMap().panel.layout (true, false);
+        const auto spot = syn::Panel::freeSpot (layout, syn::Panel::standard (syn::PanelControl::volume).bounds);
+        check (std::none_of (layout.begin(), layout.end(), [spot] (const auto& c) { return c.bounds.intersects (spot); })
+                   && spot.getY() >= syn::Panel::topBarBottom && spot.getBottom() <= syn::Panel::keyboardTop,
+               "a new knob finds a free spot between the top bar and the keyboard");
     }
 
     // A project keeps the rows, the plugin and its settings.
