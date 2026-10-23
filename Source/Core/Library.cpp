@@ -1,4 +1,5 @@
 #include "Library.h"
+#include <filesystem>
 #include "Looper.h"
 #include <juce_graphics/juce_graphics.h>
 
@@ -562,6 +563,23 @@ juce::String Library::toFloe (const juce::String& author) const
     }
     out << "\nreturn library\n";
     return out;
+}
+
+juce::String Library::shareSamples (const juce::File& from, const juce::File& to) const
+{
+    for (const auto& s : samples)
+    {
+        const auto source = from.getChildFile (s.path), target = to.getChildFile (s.path);
+        if (! target.getParentDirectory().createDirectory())
+            return "Could not make " + target.getParentDirectory().getFullPathName() + ".";
+        target.deleteFile();
+        std::error_code linkError;
+        std::filesystem::create_hard_link (std::filesystem::u8path (source.getFullPathName().toRawUTF8()),
+                                           std::filesystem::u8path (target.getFullPathName().toRawUTF8()), linkError);
+        if (linkError && ! source.copyFileTo (target))
+            return "Could not copy " + s.path + " to " + to.getFullPathName() + ".";
+    }
+    return {};
 }
 
 juce::String Library::writePresets (const juce::File& folder, bool sfz, bool decentSampler, bool floe) const

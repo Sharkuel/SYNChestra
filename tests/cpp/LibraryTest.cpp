@@ -519,6 +519,17 @@ int main (int argc, char* argv[])
                    && flacFolder.getChildFile ("Flac.sfz").loadFileAsString().contains (".flac")
                    && flacFolder.getChildFile ("Flac.floe.lua").loadFileAsString().contains (".flac\""),
                "the .dspreset, .sfz and .floe.lua play the FLAC files");
+
+        // Folder per format: another folder gets the same samples, and its own preset.
+        const auto sfzFolder = folder.getSiblingFile ("SFZ").getChildFile ("Flac");
+        sfzFolder.deleteRecursively();
+        check (lib.shareSamples (flacFolder, sfzFolder).isEmpty() && lib.writePresets (sfzFolder, true, false, false).isEmpty(),
+               "the samples can be shared with another folder");
+        bool allThere = ! lib.samples.empty();
+        for (const auto& s : lib.samples)
+            allThere = allThere && sfzFolder.getChildFile (s.path).getSize() == flacFolder.getChildFile (s.path).getSize();
+        check (allThere && sfzFolder.getChildFile ("Flac.sfz").existsAsFile() && ! sfzFolder.getChildFile ("Flac.dspreset").exists(),
+               "a format's own folder has every sample and only its preset");
     }
 
     // Release samples: the sound after key-up is kept as its own sample, played on key-up.
