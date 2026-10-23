@@ -108,7 +108,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &effectKnobs, (juce::Component*) &panelButton,
                                 (juce::Component*) &skipSameLayers, (juce::Component*) &flacSamples, (juce::Component*) &projectButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
-                                (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
+                                (juce::Component*) &saveToPath, (juce::Component*) &saveToButton, (juce::Component*) &folderPerFormat,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
                                 (juce::Component*) &measureButton, (juce::Component*) &previewButton,
                                 (juce::Component*) &outputChoice,
@@ -204,6 +204,11 @@ MainComponent::MainComponent()
     rateChoice.setTooltip ("The sample rate of the recordings. Samples are saved as 24-bit stereo WAV files.");
 
     saveToButton.onClick = [this] { chooseOutputFolder(); };
+    folderPerFormat.setToggleState (settings->getBoolValue ("folderPerFormat", false), juce::dontSendNotification);
+    folderPerFormat.onClick = [this] { settings->setValue ("folderPerFormat", folderPerFormat.getToggleState()); };
+    folderPerFormat.setTooltip ("Saves each format in a folder of its own inside Save to: Decent Sampler/<Library>, "
+                                "SFZ/<Library> and Floe/<Library>, each with the samples (shared on disk where it "
+                                "allows, so they take no extra space).");
     saveToPath.setMinimumHorizontalScale (0.5f);
     showOutputFolder();
     listenButton.onClick = [this] { listenToGroup(); };
@@ -345,6 +350,8 @@ void MainComponent::resized()
     row.removeFromRight (gap * 2);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (gap);
+    folderPerFormat.setBounds (row.removeFromRight (150));
     row.removeFromRight (gap);
     saveToPath.setBounds (row);
     area.removeFromBottom (gap);
@@ -1066,9 +1073,28 @@ void MainComponent::recordLibrary()
     if ((decentSampler.getToggleState() || floe.getToggleState()) && map.backgroundImage.isNotEmpty() && ! juce::File (map.backgroundImage).existsAsFile())
         return setStatus ("The background picture " + map.backgroundImage + " is gone. Pick another, or No picture.");
 
-    const auto folder = outputFolder().getChildFile (syn::LibraryRecorder::safeName (map.libraryName));
+    // Where each format goes: one library folder, or with Folder per format a folder for each
+    // (<Save to>/Decent Sampler/<Library>, .../SFZ/<Library>, .../Floe/<Library>), sharing the samples.
+    struct Target { juce::File folder; bool sfz, ds, floe; };
+    std::vector<Target> targets;
+    const auto libraryFolder = syn::LibraryRecorder::safeName (map.libraryName);
+    if (folderPerFormat.getToggleState())
+    {
+        if (decentSampler.getToggleState())
+            targets.push_back ({ outputFolder().getChildFile ("Decent Sampler").getChildFile (libraryFolder), false, true, false });
+        if (sfz.getToggleState())
+            targets.push_back ({ outputFolder().getChildFile ("SFZ").getChildFile (libraryFolder), true, false, false });
+        if (floe.getToggleState())
+            targets.push_back ({ outputFolder().getChildFile ("Floe").getChildFile (libraryFolder), false, false, true });
+    }
+    else
+    {
+        targets.push_back ({ outputFolder().getChildFile (libraryFolder), sfz.getToggleState(), decentSampler.getToggleState(),
+                             floe.getToggleState() });
+    }
+    const auto folder = targets.front().folder;   // recorded into, then shared with the others
+    const auto revealed = targets.size() > 1 ? outputFolder() : folder;
     const auto toRecord = map;
-    const bool writeDs = decentSampler.getToggleState(), writeSfz = sfz.getToggleState(), writeFloe = floe.getToggleState();
     syn::NoteRenderer::Settings render;
     render.sampleRate = sampleRate();
     render.blockSize = blockSize;
@@ -1077,7 +1103,7 @@ void MainComponent::recordLibrary()
     auto recorded = std::make_shared<syn::Library>();
     setPreview (false);
 
-    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, writeDs, writeSfz, writeFloe, recorded]
+    runJob ("Recording " + map.libraryName, [instrument, toRecord, render, folder, targets, recorded]
                                             (juce::ThreadWithProgressWindow& window)
     {
         juce::String report;
@@ -1090,11 +1116,20 @@ void MainComponent::recordLibrary()
         }, report);
         if (library.samples.empty())
             return report;
-        const auto error = library.writePresets (folder, writeSfz, writeDs, writeFloe);
-        return error.isNotEmpty() ? report + " " + error
-                                  : report + " Saved in " + folder.getFullPathName() + ".";
+        juce::StringArray savedIn;
+        for (const auto& target : targets)
+        {
+            window.setStatusMessage ("Saving in " + target.folder.getFullPathName());
+            auto error = target.folder == folder ? juce::String() : library.shareSamples (folder, target.folder);
+            if (error.isEmpty())
+                error = library.writePresets (target.folder, target.sfz, target.ds, target.floe);
+            if (error.isNotEmpty())
+                return report + " " + error;
+            savedIn.add (target.folder.getFullPathName());
+        }
+        return report + " Saved in " + savedIn.joinIntoString (", ") + ".";
     },
-    [this, folder, recorded] (const juce::String& report)
+    [this, folder, targets, revealed, recorded] (const juce::String& report)
     {
         if (! recorded->samples.empty())
         {
@@ -1102,12 +1137,13 @@ void MainComponent::recordLibrary()
             lastLibraryFolder = folder;
         }
         // The project goes next to the library, so it can be recorded again or extended later.
-        if (folder.isDirectory())
-            currentProject().save (folder.getChildFile (syn::LibraryRecorder::safeName (map.libraryName)
-                                                        + syn::Project::fileExtension));
+        for (const auto& target : targets)
+            if (target.folder.isDirectory())
+                currentProject().save (target.folder.getChildFile (syn::LibraryRecorder::safeName (map.libraryName)
+                                                                   + syn::Project::fileExtension));
         setStatus (report + (lastLibrary.has_value() ? " Try library plays it here." : ""));
-        if (folder.isDirectory())
-            folder.revealToUser();
+        if (revealed.isDirectory())
+            revealed.revealToUser();
     });
 }
 

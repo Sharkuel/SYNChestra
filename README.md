@@ -181,6 +181,11 @@ My Library/
     ...
 ```
 
+With **Folder per format** ticked, each format gets a folder of its own inside Save to, each with
+the samples: `Decent Sampler/My Library/`, `SFZ/My Library/` and `Floe/My Library/`. Point Floe's
+library folder setting at `Floe/`. Where the disk allows, the copies are hard links to the same
+files, so they take no extra space (and changing a sample in one folder changes it in all).
+
 Samples are 24-bit stereo WAV files (or FLAC with **FLAC** ticked: the same sound in about half
 the space, read by Decent Sampler, Floe and SFZ players), trimmed at the first sound and at the end of the tail,
 with a short fade so they never click. A note that plays nothing is left out (the status line

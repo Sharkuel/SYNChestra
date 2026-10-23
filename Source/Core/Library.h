@@ -51,6 +51,11 @@ struct Library
     /** Writes the files asked for next to the Samples folder: with several sounds, a .sfz and a
         .dspreset for each, and one .floe.lua with all of them. Returns an error, or empty. */
     juce::String writePresets (const juce::File& folder, bool sfz, bool decentSampler, bool floe = false) const;
+
+    /** Puts the samples recorded in one folder into another as well, for a library saved once per
+        format: hard links where the disk allows (no extra space), copies elsewhere. Returns an
+        error, or empty. */
+    juce::String shareSamples (const juce::File& from, const juce::File& to) const;
 };
 
 /** Records a SampleMap from a plugin into <root>/<library>/Samples/<group>/ as 24-bit stereo WAVs. */
