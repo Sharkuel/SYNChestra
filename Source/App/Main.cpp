@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include <BinaryData.h>
 #include "PluginScanner.h"
 #include "SquareLook.h"
 
@@ -34,6 +35,7 @@ private:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
+            setIcon (juce::ImageCache::getFromMemory (BinaryData::icon_png, BinaryData::icon_pngSize));
             setContentOwned (new MainComponent(), true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());

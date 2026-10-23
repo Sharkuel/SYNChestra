@@ -1,6 +1,6 @@
 # SYNChestra
 
-![SYNChestra](assets/logo-github.jpg)
+![SYNChestra](assets/logo-github.png)
 
 Record your instrument plugins into sample libraries. SYNChestra hosts a VST3 (or AU/LV2)
 instrument, plays it note by note at several velocities, and saves the result as a

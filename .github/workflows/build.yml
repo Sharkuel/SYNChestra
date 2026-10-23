@@ -74,8 +74,8 @@ jobs:
           app=build/SYNChestra_artefacts/Release
           version=$(sed -n 's/^project(SYNChestra VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           case "$RUNNER_OS" in
-            Linux)   cp packaging/linux/SYNChestra.desktop "$app/"
-                     tar -C "$app" -czf dist/SYNChestra-Linux-x86_64.tar.gz SYNChestra SYNChestra.desktop
+            Linux)   cp packaging/linux/SYNChestra.desktop "$app/" && cp assets/icon.png "$app/synchestra.png"
+                     tar -C "$app" -czf dist/SYNChestra-Linux-x86_64.tar.gz SYNChestra SYNChestra.desktop synchestra.png
                      # .deb and .rpm
                      (cd build && cpack -G "DEB;RPM" -B "$PWD/../dist/cpack") && mv dist/cpack/*.deb dist/cpack/*.rpm dist/
                      rm -rf dist/cpack ;;
