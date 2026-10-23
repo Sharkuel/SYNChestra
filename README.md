@@ -10,6 +10,20 @@ sforzando, Sfizz, TAL-Sampler and other SFZ players.
 
 The name is a tribute to Devin Townsend's *Synchestra*.
 
+## Download
+
+Get the latest version from the [Releases page](https://github.com/Sharkuel/SYNChestra/releases/latest):
+
+| System | File |
+| --- | --- |
+| Windows | `SYNChestra-Windows-x64-Setup.exe` installs it with a Start menu entry; `SYNChestra-Windows-x64.zip` is the bare program |
+| macOS | `SYNChestra-macOS.dmg`: drag SYNChestra into Applications |
+| Linux | `.deb` (Debian, Ubuntu), `.rpm` (Fedora, openSUSE), or `SYNChestra-Linux-x86_64.tar.gz` for any distribution; Arch users can build `packaging/aur/PKGBUILD` |
+
+The Windows and macOS builds aren't signed, so Windows SmartScreen and macOS Gatekeeper warn the
+first time. On Windows choose **More info**, then **Run anyway**. On macOS, right-click the app,
+choose **Open**, then **Open** again.
+
 ## Recording a library
 
 1. **Find plugins** scans your plugin folders. Each plugin opens in a separate process, so one
