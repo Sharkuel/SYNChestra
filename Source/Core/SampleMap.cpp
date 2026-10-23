@@ -198,6 +198,7 @@ juce::ValueTree SampleMap::toValueTree() const
     t.setProperty ("libraryName", libraryName, nullptr);
     t.setProperty ("effects", effects, nullptr);
     t.setProperty ("skipSameLayers", skipSameLayers, nullptr);
+    t.setProperty ("flac", flac, nullptr);
     t.setProperty ("backgroundImage", backgroundImage, nullptr);
     t.setProperty ("floeIcon", floeIcon, nullptr);
     t.setProperty ("outputChannel", outputChannel, nullptr);
@@ -220,6 +221,7 @@ SampleMap SampleMap::fromValueTree (const juce::ValueTree& t)
     m.libraryName = t.getProperty ("libraryName", m.libraryName);
     m.effects = t.getProperty ("effects", m.effects);
     m.skipSameLayers = t.getProperty ("skipSameLayers", m.skipSameLayers);
+    m.flac = t.getProperty ("flac", m.flac);
     m.backgroundImage = t.getProperty ("backgroundImage", m.backgroundImage);
     m.floeIcon = t.getProperty ("floeIcon", m.floeIcon);
     m.outputChannel = t.getProperty ("outputChannel", m.outputChannel);

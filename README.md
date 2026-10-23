@@ -55,7 +55,8 @@ The name is a tribute to Devin Townsend's *Synchestra*.
    attack, before key-up), picks the start whose sound best matches the end, and blends the two so
    the jump back can't be heard. The recording then stops at the loop's end; the sampler's Release
    fades it out after key-up. Notes that die away while held, and holds under a second, aren't
-   looped. The loop is written to the .sfz, the .dspreset and the WAV file itself. Recordings
+   looped. The loop is written to the .sfz, the .dspreset, the .floe.lua and the WAV file itself
+   (FLAC files have no place for it). Recordings
    that aren't looped always keep the whole tail after the hold.
 
    The keyboard at the bottom plays the plugin on the selected row's channel, and shades that
@@ -149,7 +150,8 @@ My Library/
     ...
 ```
 
-Samples are 24-bit stereo WAV files, trimmed at the first sound and at the end of the tail,
+Samples are 24-bit stereo WAV files (or FLAC with **FLAC** ticked: the same sound in about half
+the space, read by Decent Sampler, Floe and SFZ players), trimmed at the first sound and at the end of the tail,
 with a short fade so they never click. A note that plays nothing is left out (the status line
 names it) and its neighbours stretch over its keys.
 

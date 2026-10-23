@@ -77,6 +77,7 @@ struct SampleMap
     std::vector<Group> groups;
     std::vector<Sound> sounds;       // the rows' sounds, when they use more than the plugin's current one
     bool skipSameLayers = true;      // leave out a velocity layer that sounds like the louder one, only quieter
+    bool flac = false;               // samples as FLAC files, about half the size of WAV and just as exact
     bool effects = true;             // filter, chorus, delay and reverb knobs on the Decent Sampler panel
     juce::String backgroundImage;    // full path of a picture for the Decent Sampler panel, or empty
     juce::String floeIcon;           // full path of a picture for the library's icon in Floe, or empty

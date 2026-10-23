@@ -100,7 +100,7 @@ private:
         addKeysButton { "Add keys" }, addSoundButton { "Add sound" }, addDrumButton { "Add drum" }, removeButton { "Remove" },
         listenButton { "Listen" }, measureButton { "Measure" }, findButton { "Find notes" }, recordButton { "Record library" }, saveToButton { "Change..." };
     juce::ToggleButton decentSampler { "Decent Sampler (.dspreset)" }, sfz { "SFZ (.sfz)" }, floe { "Floe" }, effectKnobs { "Effect knobs" },
-        skipSameLayers { "Skip same layers" };
+        skipSameLayers { "Skip same layers" }, flacSamples { "FLAC" };
     juce::TextButton projectButton { "Project..." };
     juce::TextButton panelButton { "Panel..." };
     std::unique_ptr<juce::DocumentWindow> panelWindow;

@@ -106,7 +106,7 @@ MainComponent::MainComponent()
                                 (juce::Component*) &table, (juce::Component*) &totalLabel,
                                 (juce::Component*) &decentSampler, (juce::Component*) &sfz, (juce::Component*) &floe,
                                 (juce::Component*) &effectKnobs, (juce::Component*) &panelButton,
-                                (juce::Component*) &skipSameLayers, (juce::Component*) &projectButton,
+                                (juce::Component*) &skipSameLayers, (juce::Component*) &flacSamples, (juce::Component*) &projectButton,
                                 (juce::Component*) &rateChoice, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &saveToButton,
                                 (juce::Component*) &listenButton, (juce::Component*) &recordButton,
@@ -245,6 +245,13 @@ MainComponent::MainComponent()
         map.skipSameLayers = skipSameLayers.getToggleState();
         saveMap();
     };
+    flacSamples.onClick = [this]
+    {
+        map.flac = flacSamples.getToggleState();
+        saveMap();
+    };
+    flacSamples.setTooltip ("Saves the samples as FLAC instead of WAV: the same sound, in about half the disk "
+                            "space. Decent Sampler, Floe and SFZ players read FLAC.");
     skipSameLayers.setTooltip ("Leaves out a velocity layer that sounds just like the louder one, only quieter. "
                                "The louder recording covers its velocities and the sampler turns it down, which "
                                "saves disk space and the rest of that layer's takes.");
@@ -349,7 +356,9 @@ void MainComponent::resized()
     panelButton.setBounds (row.removeFromLeft (130));
     row.removeFromLeft (gap * 2);
     rateChoice.setBounds (row.removeFromLeft (110));
-    row.removeFromLeft (gap * 2);
+    row.removeFromLeft (gap);
+    flacSamples.setBounds (row.removeFromLeft (70));
+    row.removeFromLeft (gap);
     skipSameLayers.setBounds (row.removeFromLeft (150));
     row.removeFromLeft (gap);
     totalLabel.setBounds (row);
@@ -496,6 +505,7 @@ void MainComponent::showMap()
     libraryName.setText (map.libraryName, juce::dontSendNotification);
     effectKnobs.setToggleState (map.effects, juce::dontSendNotification);
     skipSameLayers.setToggleState (map.skipSameLayers, juce::dontSendNotification);
+    flacSamples.setToggleState (map.flac, juce::dontSendNotification);
     refreshOutputs();
     if (panelEditor != nullptr)
         panelEditor->refresh();

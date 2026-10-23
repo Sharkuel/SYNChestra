@@ -771,12 +771,14 @@ juce::String LibraryRecorder::safeName (const juce::String& s)
     return name.isEmpty() ? juce::String ("Untitled") : name;
 }
 
-bool LibraryRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate,
-                                const Sample* loopInfo)
+bool LibraryRecorder::writeSample (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate,
+                                   const Sample* loopInfo)
 {
     file.getParentDirectory().createDirectory();
     file.deleteFile();
     juce::WavAudioFormat wav;
+    juce::FlacAudioFormat flac;
+    auto& format = file.hasFileExtension ("flac") ? (juce::AudioFormat&) flac : (juce::AudioFormat&) wav;
     std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     if (stream == nullptr)
         return false;
@@ -790,7 +792,7 @@ bool LibraryRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<
                                                 { "Loop0Type", "0" },   // forward
                                                 { "Loop0Start", juce::String (loopInfo->loopStart) },
                                                 { "Loop0End", juce::String (loopInfo->loopEnd) } });
-    auto writer = wav.createWriterFor (stream, options);
+    auto writer = format.createWriterFor (stream, options);
     return writer != nullptr && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());
 }
 
@@ -806,6 +808,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
     juce::StringArray silent, failed;
     int looped = 0, sameLayers = 0;
     int soundInPlugin = -2;   // the map's sound the plugin is set to: none of them yet
+    const juce::String extension = map.flac ? ".flac" : ".wav";
 
     for (int g = 0; g < (int) map.groups.size(); ++g)
     {
@@ -886,7 +889,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                     s.roundRobins = takes;
                     s.path = groupFolder + "/" + safeName (group.name) + "_" + noteName (note).replace ("#", "s")
                              + "_v" + juce::String (velocity).paddedLeft ('0', 3)
-                             + (takes > 1 ? "_rr" + juce::String (take) : juce::String()) + ".wav";
+                             + (takes > 1 ? "_rr" + juce::String (take) : juce::String()) + extension;
                     if (group.releaseSamples && ! group.oneShot && take == 1)
                     {
                         // What follows key-up is the release: dampers, fret noise, the room. A
@@ -901,9 +904,9 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                             auto r = s;
                             r.release = true;
                             r.roundRobin = r.roundRobins = 1;
-                            r.path = r.path.upToLastOccurrenceOf (".wav", false, false).upToLastOccurrenceOf ("_rr", false, false)
-                                     + "_rel.wav";
-                            if (writeWav (folder.getChildFile (r.path), releaseAudio, settings.sampleRate))
+                            r.path = r.path.upToLastOccurrenceOf (extension, false, false).upToLastOccurrenceOf ("_rr", false, false)
+                                     + "_rel" + extension;
+                            if (writeSample (folder.getChildFile (r.path), releaseAudio, settings.sampleRate))
                                 library.samples.push_back (r);
                             else
                                 failed.add (r.path);
@@ -920,7 +923,7 @@ Library LibraryRecorder::record (juce::AudioPluginInstance& plugin, const Sample
                             ++looped;
                         }
                     }
-                    if (! writeWav (folder.getChildFile (s.path), audio, settings.sampleRate, &s))
+                    if (! writeSample (folder.getChildFile (s.path), audio, settings.sampleRate, &s))
                     {
                         failed.add (s.path);
                         continue;
