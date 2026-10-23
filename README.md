@@ -126,6 +126,8 @@ choose **Open**, then **Open** again.
    library sounds as recorded.
 
    **Panel...** opens the panel editor, which shows the panel at its real size (812 x 375).
+   Decent Sampler draws its top bar over the top 40 and its keyboard over the bottom 85 of that,
+   so the editor shades those strips: keep the controls between them.
    Drag the title, knobs and articulation menu where you want them; click one to rename or
    resize it, right-click to remove it, and **Add...** puts back a knob or adds a line of text.
    **Colours...** sets the background, text and knob colours, and **Background...** picks a

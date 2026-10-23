@@ -99,6 +99,33 @@ public:
                 g.drawRect (list[(size_t) i].bounds.expanded (2), 2);
             }
         }
+        drawCovered (g);
+    }
+
+    /** Decent Sampler's top bar and keyboard, which cover the top and bottom of the panel. Shown
+        see-through, so what's under them can still be found and dragged out. */
+    void drawCovered (juce::Graphics& g)
+    {
+        const auto bar = getLocalBounds().removeFromTop (syn::Panel::topBarBottom).toFloat();
+        g.setColour (juce::Colour (0xFF16181C).withAlpha (0.75f));
+        g.fillRect (bar);
+        g.setColour (juce::Colours::white.withAlpha (0.6f));
+        g.setFont (juce::FontOptions (13.0f));
+        g.drawText ("Decent Sampler's top bar covers this", bar, juce::Justification::centred);
+
+        auto keys = getLocalBounds().withTop (syn::Panel::keyboardTop).toFloat();
+        g.setColour (juce::Colours::white.withAlpha (0.55f));
+        g.fillRect (keys);
+        const float keyWidth = keys.getWidth() / 52.0f;   // a little over seven octaves
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        for (int k = 1; k < 52; ++k)
+            g.fillRect (keys.getX() + k * keyWidth, keys.getY(), 1.0f, keys.getHeight());
+        for (int k = 0; k < 52; ++k)
+            if (const int inOctave = k % 7; inOctave != 2 && inOctave != 6)
+                g.fillRect (keys.getX() + (k + 0.7f) * keyWidth, keys.getY(), keyWidth * 0.6f, keys.getHeight() * 0.6f);
+        g.setColour (juce::Colours::black.withAlpha (0.8f));
+        g.drawText ("Decent Sampler's keyboard covers this", keys.removeFromBottom (keys.getHeight() * 0.4f),
+                    juce::Justification::centred);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -436,7 +463,8 @@ PanelEditor::PanelEditor (syn::SampleMap& m, std::function<void()> changeCallbac
         changed();
     };
     help.setText ("Drag things to move them. Click one to rename or resize it, or make a knob a fader; drag a "
-                  "fader's far end to lengthen it. Right-click to remove one. "
+                  "fader's far end to lengthen it. Right-click to remove one. Keep things off the shaded "
+                  "strips: Decent Sampler's top bar and keyboard cover them. "
                   "SFZ players show no panel: they list the Volume and Release knobs by the names given here.",
                   juce::dontSendNotification);
     help.setJustificationType (juce::Justification::topLeft);

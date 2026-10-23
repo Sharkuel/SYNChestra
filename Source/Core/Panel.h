@@ -33,6 +33,9 @@ struct PanelControl
 struct Panel
 {
     static constexpr int width = 812, height = 375;   // Decent Sampler's recommended panel size
+    // Decent Sampler draws its top bar (Browse, preset name, Volume) over the top of the panel and
+    // its keyboard over the bottom, so only what lies between these two can be seen and turned.
+    static constexpr int topBarBottom = 40, keyboardTop = 290;
 
     juce::Colour background { 0xFF22282E };   // under the picture, or the whole panel without one
     juce::Colour textColour { 0xFFFFFFFF };

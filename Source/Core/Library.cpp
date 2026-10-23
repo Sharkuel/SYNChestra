@@ -309,6 +309,7 @@ juce::String Library::toDecentSampler() const
             place (*label, c);
             label->setAttribute ("text", c.kind == PanelControl::title && c.label.isEmpty() ? map.libraryName : c.label);
             label->setAttribute ("textSize", c.textSize);
+            label->setAttribute ("hAlign", "left");   // as the panel editor shows it; Decent Sampler centres by default
             label->setAttribute ("textColor", colour (panel.textColour));
         }
     }
