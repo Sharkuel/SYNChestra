@@ -875,10 +875,10 @@ void MainComponent::addPresets()
                 for (int i = 0; i < (int) ticked.size(); ++i)
                     if (ticked[(size_t) i])
                         chosen.add (i);
-                auto add = onAdd;   // this picker goes with its window
+                auto addChosen = onAdd;   // this picker goes with its window
                 if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
                     window->exitModalState (0);
-                add (chosen);
+                addChosen (chosen);
             };
             changed();
             setSize (360, 480);
