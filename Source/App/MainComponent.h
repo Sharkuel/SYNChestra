@@ -4,6 +4,7 @@
 #include "../Core/Project.h"
 #include "../Core/Library.h"
 #include "../Core/LibraryPlayer.h"
+#include "../Core/SampleImporter.h"
 #include "LiveHost.h"
 #include "NoteKeyboard.h"
 #include "PanelEditor.h"
@@ -51,6 +52,16 @@ private:
     void listenToGroup();
     void measureGroup();
     void recordLibrary();
+    /** A library from WAV or FLAC files instead of a plugin: each folder in the one picked is a row. */
+    void librarySamples();
+    /** Why the ticked formats can't be written, or empty. */
+    juce::String presetProblem() const;
+    /** Where each ticked format is saved. */
+    struct Target { juce::File folder; bool sfz, ds, floe; };
+    std::vector<Target> formatTargets() const;
+    /** Writes the presets into every target, sharing the samples in the first one. Returns what was saved
+        where, or an error. */
+    static juce::String saveFormats (const syn::Library&, const std::vector<Target>&, juce::ThreadWithProgressWindow&);
     void findNotes();
     void offerFoundRows (const juce::Array<int>& found, int channel);
     void showKeyMenu (int note);
