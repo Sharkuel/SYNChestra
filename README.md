@@ -200,6 +200,25 @@ the space, read by Decent Sampler, Floe and SFZ players), trimmed at the first s
 with a short fade so they never click. A note that plays nothing is left out (the status line
 names it) and its neighbours stretch over its keys.
 
+## A library from samples you already have
+
+**Project... > Make a library from samples...** turns a folder of WAV or FLAC files into the
+same Decent Sampler, SFZ and Floe libraries, without a plugin. It uses the library name, the
+ticked formats, Folder per format and the panel as recording does, and copies the files into
+the library's `Samples` folder (hard links where the disk allows).
+
+- Each folder inside the one picked becomes a row (files directly in it make a row named after it).
+  Rows that play the same keys, such as `Sustain/` and `Staccato/`, get keyswitches from C1 up.
+- The note comes from the file name: `C#4`, `Cs4`, `Db4` (C4 = 60), or a note number followed by a
+  velocity (`Strings 60 127`). Without one, the WAV's own root note counts when the files differ.
+- Velocity layers come from `v100` or `vel100` (the layers' top velocities), `vl2`, `layer2`,
+  or `pp` to `fff`. Several files of a note with nothing to tell them apart are layered softest to loudest.
+- `rr2`, `take2` or `seq2` make round robins; `rel` or `release` makes a key-up sample.
+- A folder whose names have no notes is a drum kit: each sound (`Kick`, `Snare`, `Tom 2`) gets a key
+  of its own from C2 up and plays to its end. `Kick_v1` and `Kick_v2` are layers of one drum.
+- A pitched sample plays up to halfway to its neighbours; the lowest and highest reach half an octave
+  further. Loops saved in WAV files are kept.
+
 ## Building from source
 
 You need CMake 3.22+, a C++17 compiler, and on Linux the ALSA, X11 and FreeType development

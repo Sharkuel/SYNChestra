@@ -266,7 +266,8 @@ MainComponent::MainComponent()
                             "colours and a background picture.");
     projectButton.onClick = [this] { showProjectMenu(); };
     projectButton.setTooltip ("Save the rows, the plugin and the sound picked in it as a .synchestra project, "
-                              "or open one to record a library again. Recording saves one next to the library.");
+                              "or open one to record a library again. Recording saves one next to the library. "
+                              "Make a library from samples turns a folder of WAV or FLAC files into one, without a plugin.");
     showMap();
     logo = juce::ImageCache::getFromMemory (BinaryData::icon_png, BinaryData::icon_pngSize);
 
@@ -540,6 +541,8 @@ void MainComponent::showProjectMenu()
     juce::PopupMenu menu;
     menu.addItem ("Open project...", [this] { openProject(); });
     menu.addItem ("Save project...", [this] { saveProject(); });
+    menu.addSeparator();
+    menu.addItem ("Make a library from samples...", [this] { librarySamples(); });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (projectButton));
 }
 
@@ -1229,20 +1232,19 @@ bool MainComponent::runJob (const juce::String& title,
     return true;
 }
 
-void MainComponent::recordLibrary()
+juce::String MainComponent::presetProblem() const
 {
-    if (plugin == nullptr)
-        return setStatus ("Load a plugin first.");
-    if (map.totalRecordings() == 0)
-        return setStatus ("Tick Record on at least one row.");
     if (! decentSampler.getToggleState() && ! sfz.getToggleState() && ! floe.getToggleState())
-        return setStatus ("Tick Decent Sampler, SFZ or Floe, so the library has a preset to open.");
+        return "Tick Decent Sampler, SFZ or Floe, so the library has a preset to open.";
     if ((decentSampler.getToggleState() || floe.getToggleState()) && map.backgroundImage.isNotEmpty() && ! juce::File (map.backgroundImage).existsAsFile())
-        return setStatus ("The background picture " + map.backgroundImage + " is gone. Pick another, or No picture.");
+        return "The background picture " + map.backgroundImage + " is gone. Pick another, or No picture.";
+    return {};
+}
 
-    // Where each format goes: one library folder, or with Folder per format a folder for each
-    // (<Save to>/Decent Sampler/<Library>, .../SFZ/<Library>, .../Floe/<Library>), sharing the samples.
-    struct Target { juce::File folder; bool sfz, ds, floe; };
+std::vector<MainComponent::Target> MainComponent::formatTargets() const
+{
+    // One library folder, or with Folder per format a folder for each (<Save to>/Decent Sampler/<Library>,
+    // .../SFZ/<Library>, .../Floe/<Library>), sharing the samples.
     std::vector<Target> targets;
     const auto libraryFolder = syn::LibraryRecorder::safeName (map.libraryName);
     if (folderPerFormat.getToggleState())
@@ -1259,6 +1261,38 @@ void MainComponent::recordLibrary()
         targets.push_back ({ outputFolder().getChildFile (libraryFolder), sfz.getToggleState(), decentSampler.getToggleState(),
                              floe.getToggleState() });
     }
+    return targets;
+}
+
+juce::String MainComponent::saveFormats (const syn::Library& library, const std::vector<Target>& targets,
+                                         juce::ThreadWithProgressWindow& window)
+{
+    // The samples are in the first folder; the others get them too.
+    const auto folder = targets.front().folder;
+    juce::StringArray savedIn;
+    for (const auto& target : targets)
+    {
+        window.setStatusMessage ("Saving in " + target.folder.getFullPathName());
+        auto error = target.folder == folder ? juce::String() : library.shareSamples (folder, target.folder);
+        if (error.isEmpty())
+            error = library.writePresets (target.folder, target.sfz, target.ds, target.floe);
+        if (error.isNotEmpty())
+            return error;
+        savedIn.add (target.folder.getFullPathName());
+    }
+    return "Saved in " + savedIn.joinIntoString (", ") + ".";
+}
+
+void MainComponent::recordLibrary()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+    if (map.totalRecordings() == 0)
+        return setStatus ("Tick Record on at least one row.");
+    if (const auto problem = presetProblem(); problem.isNotEmpty())
+        return setStatus (problem);
+
+    const auto targets = formatTargets();
     const auto folder = targets.front().folder;   // recorded into, then shared with the others
     const auto revealed = targets.size() > 1 ? outputFolder() : folder;
     const auto toRecord = map;
@@ -1283,18 +1317,7 @@ void MainComponent::recordLibrary()
         }, report);
         if (library.samples.empty())
             return report;
-        juce::StringArray savedIn;
-        for (const auto& target : targets)
-        {
-            window.setStatusMessage ("Saving in " + target.folder.getFullPathName());
-            auto error = target.folder == folder ? juce::String() : library.shareSamples (folder, target.folder);
-            if (error.isEmpty())
-                error = library.writePresets (target.folder, target.sfz, target.ds, target.floe);
-            if (error.isNotEmpty())
-                return report + " " + error;
-            savedIn.add (target.folder.getFullPathName());
-        }
-        return report + " Saved in " + savedIn.joinIntoString (", ") + ".";
+        return report + " " + saveFormats (library, targets, window);
     },
     [this, folder, targets, revealed, recorded] (const juce::String& report)
     {
@@ -1311,6 +1334,50 @@ void MainComponent::recordLibrary()
         setStatus (report + (lastLibrary.has_value() ? " Try library plays it here." : ""));
         if (revealed.isDirectory())
             revealed.revealToUser();
+    });
+}
+
+void MainComponent::librarySamples()
+{
+    if (const auto problem = presetProblem(); problem.isNotEmpty())
+        return setStatus (problem);
+    chooser = std::make_unique<juce::FileChooser> ("Pick the folder with the WAV or FLAC files", outputFolder());
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto source = fc.getResult();
+        if (! source.isDirectory())
+            return;
+        const auto targets = formatTargets();
+        const auto folder = targets.front().folder;
+        const auto revealed = targets.size() > 1 ? outputFolder() : folder;
+        const auto mapNow = map;
+        auto made = std::make_shared<syn::Library>();
+        setPreview (false);
+        runJob ("Making " + map.libraryName, [source, mapNow, folder, targets, made] (juce::ThreadWithProgressWindow& window)
+        {
+            juce::String report;
+            const auto& library = *made = syn::SampleImporter::import (source, mapNow, folder, [&window] (double done, const juce::String& file)
+            {
+                window.setProgress (done);
+                window.setStatusMessage (file);
+                return ! window.threadShouldExit();
+            }, report);
+            if (library.samples.empty())
+                return report;
+            return report + " " + saveFormats (library, targets, window);
+        },
+        [this, folder, revealed, made] (const juce::String& report)
+        {
+            if (! made->samples.empty())
+            {
+                lastLibrary = *made;
+                lastLibraryFolder = folder;
+            }
+            setStatus (report + (! made->samples.empty() ? " Try library plays it here." : ""));
+            if (! made->samples.empty() && revealed.isDirectory())
+                revealed.revealToUser();
+        });
     });
 }
 

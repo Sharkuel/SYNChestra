@@ -3,6 +3,7 @@
 #include "../../Source/Core/Library.h"
 #include "../../Source/Core/Project.h"
 #include "../../Source/Core/LibraryPlayer.h"
+#include "../../Source/Core/SampleImporter.h"
 #include <juce_graphics/juce_graphics.h>
 
 namespace
@@ -779,6 +780,101 @@ int main (int argc, char* argv[])
         check (! syn::LibraryRecorder::switchSound (synth, two.sounds[0], renderer, two.groups[0],
                                                     [&asked] { return ++asked < 2; }, 60.0, 10),
                "waiting for a sound stops when cancelled");
+    }
+
+    // A folder of samples someone already has, made into a library.
+    {
+        using Importer = syn::SampleImporter;
+        const auto a = Importer::parseName ("Piano_C#4_v100_rr2");
+        check (a.note == 61 && (int) a.layer == 100 && a.velocity && a.roundRobin == 2, "a name gives note, velocity and round robin");
+        const auto b = Importer::parseName ("Strings 60 127");
+        check (b.note == 60 && (int) b.layer == 127 && b.velocity, "two plain numbers are a note and a velocity");
+        check (Importer::parseName ("Keys_Cs4_v096_rr2").note == 61 && Importer::parseName ("Pad Db3 mf").note == 49
+                   && (int) Importer::parseName ("Pad Db3 mf").layer == 4,
+               "sharps as s, flats and dynamics are read");
+        const auto tom = Importer::parseName ("Tom 2 v3");
+        check (tom.note < 0 && tom.rest == "tom 2" && (int) tom.layer == 3, "a number in a drum's name stays part of it");
+        check (Importer::parseName ("Piano_A0_rel").release, "release samples are recognised");
+
+        const auto source = folder.getParentDirectory().getChildFile ("Import Source");
+        source.deleteRecursively();
+        juce::AudioBuffer<float> tone (2, 4800);
+        auto write = [&] (const juce::String& path, float level, int unityNote = -1)
+        {
+            for (int i = 0; i < tone.getNumSamples(); ++i)
+                tone.setSample (0, i, level * std::sin ((float) i * 0.05f)), tone.setSample (1, i, level * std::sin ((float) i * 0.05f));
+            syn::Sample loop;
+            loop.rootNote = unityNote;
+            loop.loopStart = 1000;
+            loop.loopEnd = 3999;
+            const auto file = source.getChildFile (path);
+            file.getParentDirectory().createDirectory();
+            syn::LibraryRecorder::writeSample (file, tone, 48000.0, unityNote >= 0 ? &loop : nullptr);
+        };
+        write ("Sustain/Piano_C3_v64.wav", 0.2f);
+        write ("Sustain/Piano_C3_v127.wav", 0.6f);
+        write ("Sustain/Piano_C4_v127.flac", 0.6f);
+        write ("Staccato/Piano C3 rr1.wav", 0.5f);
+        write ("Staccato/Piano C3 rr2.wav", 0.5f);
+        write ("Drums/Kick 1.wav", 0.3f);
+        write ("Drums/Kick 2.wav", 0.7f);
+        write ("Drums/Snare.wav", 0.5f);
+        write ("Looped/a.wav", 0.5f, 48);
+        write ("Looped/b.wav", 0.5f, 55);
+        source.getChildFile ("notes.txt").replaceWithText ("not a sample");
+
+        syn::SampleMap settings;
+        settings.libraryName = "Imported";
+        const auto out = folder.getParentDirectory().getChildFile ("Imported");
+        out.deleteRecursively();
+        juce::String importReport;
+        const auto lib = Importer::import (source, settings, out, {}, importReport);
+        const auto rowOf = [&] (const juce::String& name)
+        {
+            for (int g = 0; g < (int) lib.map.groups.size(); ++g)
+                if (lib.map.groups[(size_t) g].name == name)
+                    return g;
+            return -1;
+        };
+        const int drums = rowOf ("Drums"), sustain = rowOf ("Sustain"), staccato = rowOf ("Staccato"), looped = rowOf ("Looped");
+        check (lib.map.groups.size() == 4 && lib.samples.size() == 10 && drums >= 0 && sustain >= 0 && staccato >= 0 && looped >= 0,
+               "each folder becomes a row (" + importReport + ")");
+        if (lib.map.groups.size() == 4)
+        {
+            const auto& d = lib.map.groups[(size_t) drums];
+            check (! d.pitched && d.oneShot && d.lowNote == 36 && d.highNote == 38, "drums get a key each from C2: " + d.name);
+            int c3Soft = -1, c3Hard = -1, c4 = -1, rr = 0, loops = 0;
+            for (const auto& s : lib.samples)
+            {
+                if (s.group == sustain && s.rootNote == 48)
+                    (s.velocities.getEnd() == 64 ? c3Soft : c3Hard) = s.velocities.getStart();
+                if (s.group == sustain && s.rootNote == 60)
+                    c4 = s.keys.getEnd();
+                if (s.group == staccato && s.roundRobins == 2)
+                    ++rr;
+                if (s.group == looped && s.loops() && s.loopStart == 1000 && s.loopEnd == 3999)
+                    ++loops;
+            }
+            check (c3Soft == 1 && c3Hard == 65 && c4 == 66, "velocities in the names set the layers, keys stretch half an octave");
+            check (rr == 2, "rr1 and rr2 are round robins of one layer");
+            check (loops == 2 && lib.map.groups[(size_t) looped].pitched && lib.map.groups[(size_t) looped].loop,
+                   "a WAV's own root note and loop are kept");
+            int kickLayers = 0;
+            for (const auto& s : lib.samples)
+                if (s.group == drums && s.rootNote == 36)
+                    ++kickLayers;
+            check (kickLayers == 1, "Kick 1 and Kick 2 are two drums");
+            check (lib.map.groups[(size_t) sustain].keyswitch.isNotEmpty() && lib.map.groups[(size_t) staccato].keyswitch.isNotEmpty()
+                       && lib.map.groups[(size_t) sustain].keyswitch != lib.map.groups[(size_t) staccato].keyswitch,
+                   "rows playing the same keys get keyswitches");
+            bool copied = true;
+            for (const auto& s : lib.samples)
+                copied = copied && out.getChildFile (s.path).existsAsFile();
+            check (copied, "the samples are put in the library");
+            check (lib.writePresets (out, true, true, true).isEmpty() && out.getChildFile ("Imported.dspreset").existsAsFile()
+                       && out.getChildFile ("Imported.sfz").loadFileAsString().contains ("Piano_C4_v127.flac"),
+                   "presets are written for the imported library");
+        }
     }
 
     // Many sounds at once: the plugin's presets, or sounds caught as they're picked.
