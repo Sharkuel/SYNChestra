@@ -26,6 +26,9 @@ choose **Open**, then **Open** again.
 
 ## Recording a library
 
+Not sure what something does? Click **Help** (bottom right), then click any outlined button, box or
+column heading to read what it does. Click Help again to turn it off.
+
 1. **Find plugins** scans your plugin folders. Each plugin opens in a separate process, so one
    that crashes is just skipped.
 2. Pick a plugin and press **Load plugin**. Its window opens: choose the sound you want there.
