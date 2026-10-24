@@ -143,11 +143,12 @@ MainComponent::MainComponent()
     addDrumButton.onClick = [this] { addGroup (syn::Group::drum ("Drum", 38)); };
     addDrumButton.setTooltip ("Adds a single unpitched note that plays to its end: a drum, a hit or an effect.");
     removeButton.onClick = [this] { removeGroup(); };
-    addSoundButton.onClick = [this] { addSound(); };
+    addSoundButton.onClick = [this] { showAddSoundMenu(); };
     addSoundButton.setTooltip ("Records several of the plugin's sounds into one library, such as all of a Kontakt "
-                               "library's instruments. Pick a sound in the plugin and press Add sound: the rows "
-                               "are kept for it. Then pick the next sound and press it again. Record library "
+                               "library's instruments or presets: add the sound it plays now, tick several of its "
+                               "presets, or catch each sound as you pick it in the plugin. Record library "
                                "switches the plugin to each sound in turn, waiting for it to load.");
+    catchTimer.tick = [this] { catchNextSound(); };
     findButton.onClick = [this] { findNotes(); };
     findButton.setTooltip ("Plays every key once on the selected row's MIDI channel and marks the ones that make a "
                            "sound on the keyboard below.");
@@ -277,6 +278,7 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent()
 {
+    catchTimer.stopTimer();
     live.setPreview (nullptr);
     setLive (false);
     knownPlugins.removeChangeListener (this);
@@ -488,6 +490,8 @@ void MainComponent::loadSelectedPlugin()
 
 bool MainComponent::loadPlugin (const juce::PluginDescription& desc)
 {
+    catchTimer.stopTimer();   // sounds caught from the last plugin stay; catching stops with it
+    catcher = nullptr;
     setLive (false);
     pluginWindow = nullptr;
     plugin = nullptr;
@@ -774,6 +778,20 @@ int MainComponent::currentSound() const
     return map.groups.empty() ? (map.sounds.empty() ? -1 : (int) map.sounds.size() - 1) : map.groups.back().sound;
 }
 
+void MainComponent::showAddSoundMenu()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin and pick a sound in it first.");
+    juce::PopupMenu menu;
+    menu.addItem ("The sound it plays now...", [this] { addSound(); });
+    const int presets = plugin->getNumPrograms();
+    menu.addItem ("Presets from its list..." + juce::String (presets > 1 ? "" : " (it lists none)"), presets > 1, false,
+                  [this] { addPresets(); });
+    menu.addItem ("Catch each sound I pick in the plugin", true, catcher != nullptr,
+                  [this] { catchSounds (catcher == nullptr); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (addSoundButton));
+}
+
 void MainComponent::addSound()
 {
     if (plugin == nullptr)
@@ -834,6 +852,155 @@ void MainComponent::addSound (const juce::String& name, juce::MemoryBlock state)
     table.selectRow ((int) map.groups.size() - 1);
     setStatus ("Added " + name + " with " + juce::String (rows) + (rows == 1 ? " row" : " rows")
                + ". Pick the next sound in the plugin and press Add sound again, or Record library.");
+}
+
+void MainComponent::addPresets()
+{
+    /** The plugin's presets with a tick box each, and a button to add the ticked ones. */
+    class PresetPicker final : public juce::Component, private juce::ListBoxModel
+    {
+    public:
+        PresetPicker (juce::StringArray presetNames, std::function<void (juce::Array<int>)> add)
+            : names (std::move (presetNames)), ticked ((size_t) names.size(), false), onAdd (std::move (add))
+        {
+            list.setModel (this);
+            list.setRowHeight (24);
+            for (auto* c : std::initializer_list<juce::Component*> { &list, &all, &none, &addButton })
+                addAndMakeVisible (c);
+            all.onClick = [this] { std::fill (ticked.begin(), ticked.end(), true); changed(); };
+            none.onClick = [this] { std::fill (ticked.begin(), ticked.end(), false); changed(); };
+            addButton.onClick = [this]
+            {
+                juce::Array<int> chosen;
+                for (int i = 0; i < (int) ticked.size(); ++i)
+                    if (ticked[(size_t) i])
+                        chosen.add (i);
+                auto addChosen = onAdd;   // this picker goes with its window
+                if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+                    window->exitModalState (0);
+                addChosen (chosen);
+            };
+            changed();
+            setSize (360, 480);
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced (10);
+            auto buttons = area.removeFromBottom (28);
+            all.setBounds (buttons.removeFromLeft (80));
+            buttons.removeFromLeft (8);
+            none.setBounds (buttons.removeFromLeft (80));
+            addButton.setBounds (buttons.removeFromRight (140));
+            area.removeFromBottom (8);
+            list.setBounds (area);
+        }
+
+    private:
+        int getNumRows() override { return names.size(); }
+        void paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool) override
+        {
+            if (! juce::isPositiveAndBelow (row, names.size()))
+                return;
+            auto r = juce::Rectangle<int> (width, height).reduced (4, 3);
+            auto box = r.removeFromLeft (height - 6).toFloat();
+            getLookAndFeel().drawTickBox (g, *this, box.getX(), box.getY(), box.getWidth(), box.getHeight(),
+                                          ticked[(size_t) row], true, false, false);
+            r.removeFromLeft (8);
+            g.setColour (findColour (juce::Label::textColourId));
+            g.drawText (names[row], r, juce::Justification::centredLeft, true);
+        }
+        void listBoxItemClicked (int row, const juce::MouseEvent&) override
+        {
+            if (juce::isPositiveAndBelow (row, names.size()))
+            {
+                ticked[(size_t) row] = ! ticked[(size_t) row];
+                changed();
+            }
+        }
+        void changed()
+        {
+            const auto count = (int) std::count (ticked.begin(), ticked.end(), true);
+            addButton.setButtonText ("Add " + juce::String (count) + (count == 1 ? " preset" : " presets"));
+            addButton.setEnabled (count > 0);
+            list.repaint();
+        }
+
+        juce::StringArray names;
+        std::vector<bool> ticked;
+        std::function<void (juce::Array<int>)> onAdd;
+        juce::ListBox list;
+        juce::TextButton all { "All" }, none { "None" }, addButton;
+    };
+
+    juce::StringArray names;
+    for (int i = 0; i < plugin->getNumPrograms(); ++i)
+    {
+        const auto name = plugin->getProgramName (i).trim();
+        names.add (name.isNotEmpty() ? name : "Preset " + juce::String (i + 1));
+    }
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned (new PresetPicker (names, [safe = juce::Component::SafePointer<MainComponent> (this)] (juce::Array<int> chosen)
+    {
+        if (safe == nullptr || safe->plugin == nullptr || chosen.isEmpty())
+            return;
+        for (auto& sound : syn::LibraryRecorder::presetSounds (*safe->plugin, chosen))
+            safe->addSound (sound.name, std::move (sound.state));
+        safe->setStatus ("Added " + juce::String (chosen.size()) + (chosen.size() == 1 ? " preset" : " presets")
+                         + ", each with its own rows. Record library records them all.");
+    }));
+    o.dialogTitle = "Add presets";
+    o.useNativeTitleBar = true;
+    o.resizable = true;
+    o.launchAsync();
+}
+
+void MainComponent::catchSounds (bool on)
+{
+    catchTimer.stopTimer();
+    catcher = nullptr;
+    if (! on || plugin == nullptr)
+    {
+        if (caught > 0 || ! on)
+            setStatus ("Stopped catching sounds" + (caught > 0 ? ": caught " + juce::String (caught) + "." : juce::String (".")));
+        return;
+    }
+    // The sound playing now is the first, unless it was added already.
+    juce::MemoryBlock now;
+    plugin->getStateInformation (now);
+    std::vector<juce::MemoryBlock> known;
+    for (const auto& s : map.sounds)
+        known.push_back (s.state);
+    caught = 0;
+    if (std::find (known.begin(), known.end(), now) == known.end())
+    {
+        addSound ("Sound " + juce::String (map.sounds.size() + 1), now);
+        known.push_back (now);
+        caught = 1;
+    }
+    catcher = std::make_unique<syn::SoundCatcher> (std::move (known));
+    catchTimer.startTimer (1000);
+    setStatus ("Catching sounds: pick them in the plugin one after another, a second or two apart. Each new one is "
+               "added (turning a knob counts too). Add sound > Catch... again stops.");
+}
+
+void MainComponent::catchNextSound()
+{
+    if (plugin == nullptr || catcher == nullptr)
+        return catchSounds (false);
+    juce::MemoryBlock now;
+    plugin->getStateInformation (now);
+    if (! catcher->check (now))
+        return;
+    // The plugin's name for it when it gives one, as some do for their presets.
+    auto name = plugin->getNumPrograms() > 0 ? plugin->getProgramName (plugin->getCurrentProgram()).trim() : juce::String();
+    const bool taken = std::any_of (map.sounds.begin(), map.sounds.end(), [&name] (const auto& s) { return s.name == name; });
+    if (name.isEmpty() || name.equalsIgnoreCase ("default") || taken)
+        name = "Sound " + juce::String (map.sounds.size() + 1);
+    addSound (name, now);
+    ++caught;
+    setStatus ("Caught " + name + " (" + juce::String (caught) + " so far). Pick the next sound in the plugin, or "
+               "Add sound > Catch... to stop. Click a sound in the table to rename it.");
 }
 
 void MainComponent::showSoundMenu (int row)

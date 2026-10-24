@@ -805,6 +805,31 @@ juce::Array<int> LibraryRecorder::findSoundingNotes (juce::AudioPluginInstance& 
     return found;
 }
 
+std::vector<Sound> LibraryRecorder::presetSounds (juce::AudioPluginInstance& plugin, const juce::Array<int>& programs)
+{
+    juce::MemoryBlock before;
+    plugin.getStateInformation (before);
+    std::vector<Sound> sounds;
+    for (const int program : programs)
+    {
+        if (! juce::isPositiveAndBelow (program, plugin.getNumPrograms()))
+            continue;
+        Sound sound;
+        {
+            const juce::ScopedLock lock (plugin.getCallbackLock());
+            plugin.setCurrentProgram (program);
+        }
+        sound.name = plugin.getProgramName (program).trim();
+        if (sound.name.isEmpty())
+            sound.name = "Preset " + juce::String (program + 1);
+        plugin.getStateInformation (sound.state);
+        sounds.push_back (std::move (sound));
+    }
+    const juce::ScopedLock lock (plugin.getCallbackLock());
+    plugin.setStateInformation (before.getData(), (int) before.getSize());
+    return sounds;
+}
+
 juce::String LibraryRecorder::safeName (const juce::String& s)
 {
     auto name = s.removeCharacters ("\\/:*?\"<>|").trim();
