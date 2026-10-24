@@ -102,6 +102,10 @@ public:
     static bool switchSound (juce::AudioPluginInstance&, const Sound&, NoteRenderer&, const Group&,
                              std::function<bool()> keepGoing, double maxSeconds = 180.0, int checkEveryMs = 1000);
 
+    /** The plugin's own presets (its programs) as sounds, named as the plugin names them: the plugin
+        is switched to each in turn and its settings kept, then put back as it was. */
+    static std::vector<Sound> presetSounds (juce::AudioPluginInstance&, const juce::Array<int>& programs);
+
     /** Strips characters file systems reject. */
     static juce::String safeName (const juce::String&);
 
@@ -110,5 +114,37 @@ public:
         has no such chunk, so there the loop is only in the presets. */
     static bool writeSample (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate,
                              const Sample* loopInfo = nullptr);
+};
+
+/** Catches sounds as they're picked in a plugin that doesn't list them as presets (Kontakt's
+    snapshots, say): fed the plugin's settings every second or so, it says when they've changed to
+    something new and stayed that way, so a sound still loading isn't caught half-way. */
+class SoundCatcher
+{
+public:
+    /** Settings already caught, which aren't caught again. */
+    explicit SoundCatcher (std::vector<juce::MemoryBlock> known) : seen (std::move (known)) {}
+
+    /** True when these settings are new and the same as at the last check. */
+    bool check (const juce::MemoryBlock& now)
+    {
+        if (std::find (seen.begin(), seen.end(), now) != seen.end())
+        {
+            pending.reset();
+            return false;
+        }
+        if (pending.getSize() > 0 && pending == now)
+        {
+            seen.push_back (now);
+            pending.reset();
+            return true;
+        }
+        pending = now;
+        return false;
+    }
+
+private:
+    std::vector<juce::MemoryBlock> seen;
+    juce::MemoryBlock pending;
 };
 } // namespace syn
