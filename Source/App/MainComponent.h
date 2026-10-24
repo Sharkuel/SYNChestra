@@ -8,6 +8,7 @@
 #include "LiveHost.h"
 #include "NoteKeyboard.h"
 #include "PanelEditor.h"
+#include "Help.h"
 
 /** Find instrument plugins, load one, describe what to record, and record it into a
     Decent Sampler and SFZ library. */
@@ -86,6 +87,9 @@ private:
     bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
                  std::function<void (const juce::String&)> done);
     void setStatus (const juce::String& text);
+    void setUpHelp();
+    void showHelp (bool on);
+    void explainAt (juce::Point<int>);
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     juce::File scanCrashFile() const;
 
@@ -135,6 +139,10 @@ private:
     juce::Rectangle<int> logoArea;   // beside the top two rows
     juce::Label status;
     juce::TooltipWindow tooltips { this };
+    juce::TextButton helpButton { "Help" };
+    HelpOverlay helpOverlay;                                                // over the window while Help is on
+    std::vector<std::pair<juce::Component*, juce::String>> helpTexts;       // "Title\nWhat it does"
+    std::map<int, juce::String> columnHelp;                                 // the same for the table's columns
 
     /** Checks the plugin's settings every second while sounds are being caught. */
     struct CatchTimer final : public juce::Timer

@@ -270,6 +270,7 @@ MainComponent::MainComponent()
                               "Make a library from samples turns a folder of WAV or FLAC files into one, without a plugin.");
     showMap();
     logo = juce::ImageCache::getFromMemory (BinaryData::icon_png, BinaryData::icon_pngSize);
+    setUpHelp();
 
     refreshPluginChoices();
     setStatus (knownPlugins.getNumTypes() == 0 ? "Find your instrument plugins to start."
@@ -338,7 +339,10 @@ void MainComponent::resized()
     addKeysButton.setBounds (row.removeFromRight (90));
     area.removeFromTop (gap);
 
-    status.setBounds (area.removeFromBottom (44));
+    auto statusRow = area.removeFromBottom (44);
+    helpButton.setBounds (statusRow.removeFromRight (70).withHeight (rowHeight));
+    statusRow.removeFromRight (gap);
+    status.setBounds (statusRow);
     area.removeFromBottom (gap);
     keyboard.setBounds (area.removeFromBottom (80));
     area.removeFromBottom (gap);
@@ -375,6 +379,12 @@ void MainComponent::resized()
     area.removeFromBottom (gap);
 
     table.setBounds (area);
+
+    helpOverlay.setBounds (getLocalBounds());
+    helpOverlay.spots.clear();
+    for (const auto& [c, text] : helpTexts)
+        if (c->isVisible())
+            helpOverlay.spots.push_back (c->getBounds());
 }
 
 void MainComponent::setStatus (const juce::String& text)
@@ -1379,6 +1389,175 @@ void MainComponent::librarySamples()
                 revealed.revealToUser();
         });
     });
+}
+
+// --- help ----------------------------------------------------------------------------------
+
+void MainComponent::setUpHelp()
+{
+    addAndMakeVisible (helpButton);
+    helpButton.setClickingTogglesState (true);
+    helpButton.setColour (juce::TextButton::buttonOnColourId, helpColour);
+    helpButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+    helpButton.setTooltip ("Turns Help on: then click any button, box or column to read what it does.");
+    helpButton.onClick = [this] { showHelp (helpButton.getToggleState()); };
+    helpOverlay.onClick = [this] (juce::Point<int> at) { explainAt (at); };
+    addChildComponent (helpOverlay);
+
+    auto add = [this] (juce::Component& c, const juce::String& title, const juce::String& body)
+    {
+        helpTexts.push_back ({ &c, title + "\n" + body });
+    };
+    add (scanButton, "Find plugins",
+         "Looks through your plugin folders for VST3 instruments and lists them in the box to the right. Each plugin "
+         "is opened on its own, so one that crashes is skipped instead of closing SYNChestra. Run it again after "
+         "installing a new plugin.");
+    add (pluginSearch, "Search plugins",
+         "Type part of a plugin's name or maker to narrow the list.");
+    add (pluginChoice, "Plugin list",
+         "The instruments Find plugins found. Pick the one to record, then click Load plugin.");
+    add (loadButton, "Load plugin",
+         "Loads the plugin picked in the list. It plays on your sound card, from the keyboard below and your MIDI "
+         "inputs, so you can hear it before recording.");
+    add (showButton, "Show plugin",
+         "Opens the plugin's own window, to pick and tweak the sound you want to record.");
+    add (outputChoice, "Output",
+         "The plugin output that's heard and recorded. Multi-out plugins (drum kits, Kontakt) can send each "
+         "instrument to its own pair: pick one to record just that.");
+    add (libraryName, "Library name",
+         "What the library is called in Decent Sampler, SFZ players and Floe. It also names the library's folder "
+         "and its preset files.");
+    add (projectButton, "Project...",
+         "Save project keeps the rows, the plugin and the sounds picked in it in a .synchestra file; Open project "
+         "brings them back to record again or add to. Recording saves one next to the library. Make a library from "
+         "samples turns a folder of WAV or FLAC files into a library without a plugin: each folder inside it becomes "
+         "a row, and the file names give the notes, velocities and round robins (see the README).");
+    add (addSoundButton, "Add sound",
+         "Records several of the plugin's sounds into one library, such as a Kontakt library's instruments or "
+         "presets. Add the sound it plays now, tick several of its presets, or catch each sound as you pick it in "
+         "the plugin's window. Each sound gets its own presets; pick a row's sound in its Sound column.");
+    add (addKeysButton, "Add keys",
+         "Adds a row for a range of keys: a recording every few keys, each pitched to fill the keys between. For "
+         "pianos, pads, strings and other played instruments.");
+    add (addDrumButton, "Add drum",
+         "Adds a row for a single unpitched note that plays to its end: a drum, a hit or an effect.");
+    add (findButton, "Find notes",
+         "Plays every key once on the selected row's MIDI channel and shows the ones that make a sound in green on "
+         "the keyboard, then offers to make rows for them.");
+    add (removeButton, "Remove",
+         "Removes the selected row.");
+    add (table, "Rows",
+         "Each row is one set of recordings: a range of keys or a single drum. Click a column heading while Help is "
+         "on to read what it means; double-click a cell to change it.");
+    add (decentSampler, "Decent Sampler",
+         "Writes a .dspreset for Decent Sampler, with the panel you lay out in Panel...");
+    add (sfz, "SFZ",
+         "Writes a .sfz for sforzando, Sfizz, TAL-Sampler and other SFZ players. The Volume, Release, Attack and "
+         "Pan knobs become named CC knobs.");
+    add (floe, "Floe",
+         "Writes a .floe.lua for Floe, one Floe instrument per row. Add the folder you save to as a library folder in "
+         "Floe's settings. Floe has no keyswitches, so you pick a row in its instrument list instead.");
+    add (effectKnobs, "Effect knobs",
+         "Adds Tone, Chorus, Delay, Reverb and Room knobs to the Decent Sampler panel. They start off, so the library "
+         "sounds as recorded. Knobs... in the panel editor picks each one.");
+    add (panelButton, "Panel...",
+         "Lays out the Decent Sampler panel: pick its knobs, move and rename them, choose colours and a background "
+         "picture, and set Floe's icon and colours. Grey areas are covered by Decent Sampler's own top bar and keyboard.");
+    add (rateChoice, "Sample rate",
+         "The sample rate of the recordings. 48 kHz suits most uses; 44.1 kHz matches CDs.");
+    add (flacSamples, "FLAC",
+         "Saves the samples as FLAC instead of WAV: the same sound in about half the disk space. Decent Sampler, Floe "
+         "and SFZ players read FLAC.");
+    add (skipSameLayers, "Skip same layers",
+         "Leaves out a velocity layer that sounds just like the louder one, only quieter. The louder recording covers "
+         "its velocities and the sampler turns it down, which saves disk space and recording time.");
+    add (totalLabel, "Recordings",
+         "How many notes Record library will play, counting every layer and round robin of the ticked rows.");
+    add (saveToPath, "Save to",
+         "The folder libraries are saved in. Each library gets a folder of its own inside it, named after it.");
+    add (saveToButton, "Change...",
+         "Picks the folder libraries are saved in.");
+    add (folderPerFormat, "Folder per format",
+         "Saves each format in a folder of its own inside Save to: Decent Sampler/<Library>, SFZ/<Library> and "
+         "Floe/<Library>, each with the samples. Where the disk allows they're the same files, so they take no extra space.");
+    add (previewButton, "Try library",
+         "Plays the library you just made from the keyboard and your MIDI inputs, as a sampler would, so you can try "
+         "it before opening it elsewhere. Click again to go back to the plugin.");
+    add (measureButton, "Measure",
+         "Holds the selected row's lowest note to hear how long it rings, then sets Hold, Release, One-shot and Loop to suit it.");
+    add (listenButton, "Listen",
+         "Plays the selected row's middle note, held as it will be recorded.");
+    add (recordButton, "Record library",
+         "Records every ticked row, one note at a time, into the library's Samples folder, then writes the ticked "
+         "formats. You can stop part-way; what's recorded so far is kept.");
+    add (keyboard, "Keyboard",
+         "Click to play the plugin on the selected row's channel. Cyan keys are the selected row's, green ones are "
+         "those Find notes heard. Right-click a key to make it a row's lowest or highest note, add a drum on it, or "
+         "draw a new key row.");
+    add (status, "Status",
+         "What SYNChestra did last, or what to do next.");
+    add (helpButton, "Help",
+         "Click it again to turn Help off.");
+
+    columnHelp = {
+        { colOn, "Record\nTicked rows are recorded; unticked ones are kept but skipped." },
+        { colName, "Name\nThe row's name: its group in Decent Sampler and SFZ, its instrument in Floe, and its folder in Samples." },
+        { colSound, "Sound\nWhich of the sounds added with Add sound this row records. Empty: the plugin as it is." },
+        { colLow, "Lowest\nThe row's lowest key, as a number or a name (C4 is 60)." },
+        { colHigh, "Highest\nThe row's highest key. A drum row has the same lowest and highest key." },
+        { colStep, "Every\nA recording every this many keys; the sampler pitches each one to fill the keys between. 1 records every key." },
+        { colLayers, "Layers\nVelocity layers: how many loudnesses each note is recorded at, spread from soft to hard." },
+        { colRoundRobins, "Round robins\nTakes per note and layer, played in turn so repeated notes don't sound machine-made. Useful for drums and plucks." },
+        { colHold, "Hold (s)\nHow long each note is held before it's let go. Measure sets it from how long the note rings." },
+        { colRelease, "Release (s)\nHow long the sampler fades a note after the key is let go." },
+        { colPitched, "Pitched\nTicked: each recording is pitched to fill its neighbouring keys. Unticked: every key plays its own recording as it is (drums)." },
+        { colOneShot, "One-shot\nTicked: a note plays to its end whatever the key does, like a drum hit." },
+        { colLoop, "Loop\nSustained recordings get a seamless loop, so a key can be held for as long as you like." },
+        { colKeyUp, "Key-up\nAlso records the sound of letting go (dampers, fret noise, the room) and plays it when a key is released." },
+        { colChannel, "Channel\nThe MIDI channel the row's notes are sent on, for plugins that play a different sound per channel." },
+        { colSwitch, "Keyswitch\nA note (C0) or CC (CC32=10) sent before each note to pick an articulation in the plugin. Rows with one become switchable articulations in the library." },
+        { colCount, "Recordings\nHow many notes this row records: keys times layers times round robins." },
+    };
+}
+
+void MainComponent::showHelp (bool on)
+{
+    helpOverlay.setVisible (on);
+    if (on)
+    {
+        resized();
+        helpOverlay.toFront (false);
+        helpButton.toFront (false);   // stays clickable, to turn Help off
+        setStatus ("Help is on: click anything outlined to read what it does. Click Help again when you're done.");
+    }
+    else
+    {
+        setStatus ("Help is off.");
+    }
+}
+
+void MainComponent::explainAt (juce::Point<int> at)
+{
+    auto show = [this] (const juce::String& text, juce::Rectangle<int> target)
+    {
+        auto bubble = std::make_unique<HelpBubble> (text.upToFirstOccurrenceOf ("\n", false, false),
+                                                    text.fromFirstOccurrenceOf ("\n", false, false));
+        juce::CallOutBox::launchAsynchronously (std::move (bubble), target, this);
+    };
+    if (table.getBounds().contains (at) && at.y < table.getY() + table.getHeader().getHeight())
+    {
+        const auto x = at.x - table.getX() + table.getViewport()->getViewPositionX();
+        const auto column = table.getHeader().getColumnIdAtX (x);
+        if (const auto it = columnHelp.find (column); it != columnHelp.end())
+        {
+            const auto left = table.getX() + table.getHeader().getColumnPosition (table.getHeader().getIndexOfColumnId (column, true)).getX()
+                              - table.getViewport()->getViewPositionX();
+            return show (it->second, { left, table.getY(), table.getHeader().getColumnWidth (column), table.getHeader().getHeight() });
+        }
+    }
+    for (const auto& [c, text] : helpTexts)
+        if (c->isVisible() && c->getBounds().expanded (2).contains (at))
+            return show (text, c->getBounds());
 }
 
 // --- keyboard ------------------------------------------------------------------------------
