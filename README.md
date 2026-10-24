@@ -153,10 +153,19 @@ choose **Open**, then **Open** again.
    editor, which SFZ players list.
 
 **Several sounds in one library.** To record many of a plugin's sounds in one go (all of a
-Kontakt library's instruments, say), set up the rows for the first one, then press **Add sound**:
-SYNChestra keeps the plugin's settings under the name you give, and a **Sound** column shows
-which sound each row records. Pick the next sound in the plugin and press **Add sound** again;
-its rows start as copies of the last sound's, to change as you like. **Record library** then
+Kontakt library's instruments or presets, say), set up the rows for the first one, then press
+**Add sound**:
+
+- **The sound it plays now...** keeps the plugin's settings under the name you give.
+- **Presets from its list...** shows the presets the plugin lists (most synths list theirs): tick
+  as many as you like, or **All**, and each becomes a sound named after it.
+- **Catch each sound I pick in the plugin** is for plugins that don't list their presets, like
+  Kontakt: click through the presets in the plugin's own window, a second or two apart, and each
+  new one is added as Sound 1, Sound 2... (turning a knob counts as a new sound too). Choose it
+  again to stop, and click a sound in the table to rename it.
+
+A **Sound** column shows which sound each row records. Each new sound's rows start as copies of
+the last sound's, to change as you like. **Record library** then
 switches the plugin to each sound in turn, waits until it has loaded (until its middle note
 plays the same twice running, up to three minutes) and records its rows into
 `Samples/<sound>/`. Decent Sampler and SFZ get a preset per sound (`<Library> - <Sound>`), Floe

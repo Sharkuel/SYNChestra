@@ -44,8 +44,12 @@ private:
     void setPreview (bool on);
     void addGroup (syn::Group);
     int currentSound() const;
+    void showAddSoundMenu();
     void addSound();
     void addSound (const juce::String& name, juce::MemoryBlock state);
+    void addPresets();
+    void catchSounds (bool on);
+    void catchNextSound();
     void showSoundMenu (int row);
     void removeSound (int sound);
     void removeGroup();
@@ -131,6 +135,15 @@ private:
     juce::Rectangle<int> logoArea;   // beside the top two rows
     juce::Label status;
     juce::TooltipWindow tooltips { this };
+
+    /** Checks the plugin's settings every second while sounds are being caught. */
+    struct CatchTimer final : public juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { tick(); }
+    } catchTimer;
+    std::unique_ptr<syn::SoundCatcher> catcher;   // while catching sounds
+    int caught = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

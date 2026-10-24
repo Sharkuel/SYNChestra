@@ -34,10 +34,11 @@ public:
     bool producesMidi() const override { return false; }
     juce::AudioProcessorEditor* createEditor() override { return nullptr; }
     bool hasEditor() const override { return false; }
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // Presets 0..2 are patches 1..3; the third has no name.
+    int getNumPrograms() override { return 3; }
+    int getCurrentProgram() override { return juce::jlimit (0, 2, patch - 1); }
+    void setCurrentProgram (int program) override { patch = program + 1; }
+    const juce::String getProgramName (int program) override { return program < 2 ? "Patch " + juce::String (program + 1) : juce::String(); }
     void changeProgramName (int, const juce::String&) override {}
     void getStateInformation (juce::MemoryBlock& state) override
     {
@@ -874,6 +875,24 @@ int main (int argc, char* argv[])
                        && out.getChildFile ("Imported.sfz").loadFileAsString().contains ("Piano_C4_v127.flac"),
                    "presets are written for the imported library");
         }
+    }
+
+    // Many sounds at once: the plugin's presets, or sounds caught as they're picked.
+    {
+        FakeSynth presetSynth;
+        const auto presets = syn::LibraryRecorder::presetSounds (presetSynth, { 0, 2 });
+        check (presets.size() == 2 && presets[0].name == "Patch 1" && presets[1].name == "Preset 3"
+                   && presets[1].state == juce::MemoryBlock ("patch 3", 7),
+               "ticked presets become sounds, named as the plugin names them");
+        check (presetSynth.patch == 7, "the plugin is put back as it was");
+
+        syn::SoundCatcher catcher ({ juce::MemoryBlock ("patch 7", 7) });
+        const juce::MemoryBlock five ("patch 5", 7), six ("patch 6", 7);
+        check (! catcher.check (juce::MemoryBlock ("patch 7", 7)), "the sound already there isn't caught");
+        check (! catcher.check (five) && catcher.check (five), "a new sound is caught once it stays the same");
+        check (! catcher.check (five) && ! catcher.check (five), "and only once");
+        check (! catcher.check (six) && ! catcher.check (five) && ! catcher.check (six) && catcher.check (six),
+               "a sound still changing isn't caught half-way");
     }
 
     std::cout << (failures == 0 ? "All checks passed." : juce::String (failures) + " checks FAILED.") << std::endl;
