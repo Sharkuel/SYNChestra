@@ -1041,8 +1041,10 @@ void MainComponent::showSoundMenu (int row)
             window->addTextEditor ("name", map.sounds[(size_t) sound].name);
             window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
             window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+            // Made out here: MSVC reads `this` in a lambda's capture inside another lambda as the outer lambda.
+            juce::Component::SafePointer<MainComponent> safe (this);
             window->enterModalState (true, juce::ModalCallbackFunction::create (
-                [safe = juce::Component::SafePointer<MainComponent> (this), window, sound] (int result)
+                [safe, window, sound] (int result)
                 {
                     const auto name = window->getTextEditorContents ("name").trim();
                     if (safe == nullptr || result != 1 || name.isEmpty())
@@ -1232,7 +1234,8 @@ bool MainComponent::runJob (const juce::String& title,
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.
-        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+        juce::Component::SafePointer<MainComponent> safe (this);   // out here for MSVC, as above
+        juce::MessageManager::callAsync ([safe]
         {
             if (safe != nullptr)
                 safe->job = nullptr;

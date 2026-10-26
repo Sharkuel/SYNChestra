@@ -209,7 +209,7 @@ int main (int argc, char* argv[])
     check (synth.channels.count (10) == 1 && synth.channels.count (1) == 1, "each group plays on its own MIDI channel");
 
     const auto first = folder.getChildFile (library.samples.front().path);
-    check (first.existsAsFile() && first.getFullPathName().contains ("Samples/Lead"), "samples go in Samples/<group>");
+    check (first.existsAsFile() && library.samples.front().path.startsWith ("Samples/Lead/"), "samples go in Samples/<group>");
     juce::AudioFormatManager formats;
     formats.registerBasicFormats();
     if (std::unique_ptr<juce::AudioFormatReader> reader { formats.createReaderFor (first) })
