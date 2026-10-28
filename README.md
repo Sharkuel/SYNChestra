@@ -18,7 +18,7 @@ Get the latest version from the [Releases page](https://github.com/Sharkuel/SYNC
 | --- | --- |
 | Windows | `SYNChestra-Windows-x64-Setup.exe` installs it with a Start menu entry; `SYNChestra-Windows-x64.zip` is the bare program |
 | macOS | `SYNChestra-macOS.dmg`: drag SYNChestra into Applications |
-| Linux | `.deb` (Debian, Ubuntu), `.rpm` (Fedora, openSUSE), or `SYNChestra-Linux-x86_64.tar.gz` for any distribution; Arch users can build `packaging/aur/PKGBUILD` |
+| Linux | `.deb` (Debian, Ubuntu), `.rpm` (Fedora, openSUSE), or `SYNChestra-Linux-x86_64.tar.gz` for any distribution; Arch users install `synchestra` (this release) or `synchestra-git` (latest code) from the AUR |
 
 The Windows and macOS builds aren't signed, so Windows SmartScreen and macOS Gatekeeper warn the
 first time. On Windows choose **More info**, then **Run anyway**. On macOS, right-click the app,
@@ -239,7 +239,8 @@ cmake --build build --target SYNChestra_tests
 build/SYNChestra_tests_artefacts/Release/SYNChestra_tests /tmp/synchestra-test
 ```
 
-On Arch Linux, `cd packaging/aur && makepkg -si` builds and installs it with its menu entry.
+On Arch Linux, `cd packaging/aur/synchestra && makepkg -si` builds the latest release and installs it with its
+menu entry; `packaging/aur/synchestra-git` builds the latest code instead.
 
 ## Licence
 

@@ -1,0 +1,29 @@
+# SYNChestra from a released version. For the AUR package synchestra.
+# On a new release: set pkgver, reset pkgrel to 1, then `updpkgsums` and
+# `makepkg --printsrcinfo > .SRCINFO`.
+pkgname=synchestra
+_name=SYNChestra
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Record instrument plugins into Decent Sampler, SFZ and Floe libraries"
+arch=('x86_64')
+url="https://github.com/Sharkuel/SYNChestra"
+license=('AGPL-3.0-only')
+depends=('alsa-lib' 'freetype2' 'fontconfig' 'libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxcursor')
+makedepends=('git' 'cmake' 'ninja')
+optdepends=('yabridge: Windows plugins on Linux')
+conflicts=('synchestra-git')
+source=("$_name-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+        "JUCE::git+https://github.com/juce-framework/JUCE.git#tag=8.0.10")
+sha256sums=('79f34d96683f7d9f54dc5f4bd86e182a9ed3a9acf1f0d08575a791653e71e809'
+            'SKIP')
+
+build() {
+  cmake -B build -S "$_name-$pkgver" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+    -DFETCHCONTENT_SOURCE_DIR_JUCE="$srcdir/JUCE"
+  cmake --build build --target SYNChestra
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build --component SYNChestra
+}
